@@ -2,29 +2,21 @@ package mods.gate_compass;
 import mods.api.Context;
 import mods.api.settings.Flag;
 import openfl.display.Sprite;
-import brain.assetRepository.SwfAsset;
-import facade.DBFacade;
-import openfl.display.MovieClip;
-import openfl.display.BitmapData;
 import openfl.events.MouseEvent;
 import openfl.text.TextField;
 import openfl.text.TextFormat;
 import openfl.geom.Point;
-import openfl.filters.ColorMatrixFilter;
 class CompassTools extends Sprite {
  var switches:Array<Sprite>=[];var flags:Array<Flag>=[];var popupHeight=365.;
  var ctx:Context;var controls:Array<CompassControl>;var button=new Sprite();var popup=new Sprite();
- var tracks:Array<Sprite>=[];var labels:Array<TextField>=[];var active=-1;var moving=false;var offset=new Point();var icon:BitmapData;
+ var tracks:Array<Sprite>=[];var labels:Array<TextField>=[];var active=-1;var moving=false;var offset=new Point();
  var layoutReady=false;var pressTime=0.;var closeButton=new Sprite();
- var iconHolder=new Sprite();var disposed=false;
+ var iconHolder=new Sprite();
  var buttonGrip=new Sprite();var popupGrip=new Sprite();var layoutKind=0;var origin=new Point();var initial=new Point();var initialScale=1.;var suppressClick=false;
  public function new(ctx:Context,controls:Array<CompassControl>,?flags:Array<Flag>){super();this.ctx=ctx;this.controls=controls;if(flags!=null)this.flags=flags;popupHeight=365+this.flags.length*36;
   button.graphics.lineStyle(2,0x38230D);button.graphics.beginFill(0x084A0C);button.graphics.drawRoundRect(0,0,36,36,10,10);button.graphics.endFill();button.graphics.lineStyle(1,0x25B52B);button.graphics.beginFill(0x008D0A);button.graphics.drawRoundRect(3,3,30,30,7,7);button.graphics.endFill();button.graphics.lineStyle(0,0,0);button.graphics.beginFill(0x13B81E,.6);button.graphics.drawRoundRect(5,5,26,11,5,5);button.graphics.endFill();
   iconHolder.mouseEnabled=false;iconHolder.mouseChildren=false;button.addChild(iconHolder);
-  fallbackGear();
-  var facade=ctx.core.facade;
-  if(facade!=null&&facade.assetLoadingComponent!=null)
-   facade.assetLoadingComponent.getSwfAsset(DBFacade.buildFullDownloadPath("Resources/Art2D/UI/db_UI_town.swf"),loadGear);
+  drawSettingsIcon();
 
   button.buttonMode=true;button.mouseChildren=false;button.addEventListener(MouseEvent.CLICK,toggle);button.addEventListener(MouseEvent.MOUSE_DOWN,buttonDown);addChild(button);
   grip(buttonGrip,button,25,25);grip(popupGrip,popup,304,popupHeight-16);
@@ -37,21 +29,12 @@ class CompassTools extends Sprite {
   for(i in 0...controls.length){var text=label("",14);text.x=20;text.y=57+this.flags.length*36+i*50;labels.push(text);popup.addChild(text);var track=new Sprite();track.x=20;track.y=88+this.flags.length*36+i*50;track.buttonMode=true;tracks.push(track);popup.addChild(track);track.addEventListener(MouseEvent.MOUSE_DOWN,function(e){e.stopPropagation();active=tracks.indexOf(cast e.currentTarget);listen();slide(e);});}
   popup.setChildIndex(popupGrip,popup.numChildren-1);popup.addEventListener(MouseEvent.MOUSE_DOWN,block);popup.x=44;popup.visible=false;addChild(popup);refresh();defaultLayout();
  }
- function fallbackGear():Void{
-  var g=iconHolder.graphics;g.clear();g.beginFill(0xFFFFFF);
-  for(i in 0...64){var angle=i*Math.PI/32;var radius=(i%8<4)?13.:10.;var px=18+Math.cos(angle)*radius;var py=18+Math.sin(angle)*radius;if(i==0)g.moveTo(px,py);else g.lineTo(px,py);}
-  g.endFill();g.beginFill(0x126D16);g.drawCircle(18,18,5);g.endFill();
- }
- function loadGear(asset:SwfAsset):Void{
-  if(disposed||asset==null)return;
-  var type=asset.getClass("options_panel_button");if(type==null)return;
-  var art=Std.downcast(ASCompat.createInstance(type,[]),MovieClip);if(art==null)return;
-  art.gotoAndStop(1);art.mouseEnabled=false;art.mouseChildren=false;
-  var bounds=art.getBounds(art);if(bounds.width<=0||bounds.height<=0)return;
-  var factor=28/Math.max(bounds.width,bounds.height);
-  art.scaleX=art.scaleY=factor;art.x=18-(bounds.x+bounds.width/2)*factor;art.y=18-(bounds.y+bounds.height/2)*factor;
-  art.filters=[new ColorMatrixFilter([0,0,0,0,240,0,0,0,0,255,0,0,0,0,238,0,0,0,1,0])];
-  iconHolder.graphics.clear();iconHolder.addChild(art);
+ // Lucide settings, ISC license; SVG outline sampled once at build time.
+ function drawSettingsIcon():Void{
+  var g=iconHolder.graphics;g.clear();g.lineStyle(2.2,0xFFFFFF,1);
+  var outline:Array<Float>=[9.671,4.136,9.7544,3.7001,9.9135,3.2982,10.1401,2.9378,10.4261,2.6263,10.7633,2.371,11.1435,2.1795,11.5587,2.0592,12.0005,2.0174,12.4423,2.0592,12.8575,2.1795,13.2377,2.371,13.5749,2.6263,13.8609,2.9378,14.0875,3.2982,14.2466,3.7001,14.33,4.136,14.3721,4.4168,14.4469,4.6875,14.5528,4.9455,14.6881,5.1883,14.8513,5.4134,15.0407,5.6182,15.2546,5.8001,15.4915,5.9567,15.7455,6.0834,16.0101,6.1776,16.2822,6.239,16.5587,6.2676,16.8367,6.2633,17.1131,6.2258,17.3848,6.1551,17.649,6.051,18.0677,5.9066,18.4945,5.8444,18.9191,5.8612,19.331,5.9535,19.7197,6.118,20.0749,6.3513,20.3859,6.6501,20.6425,7.0111,20.8271,7.4137,20.9306,7.8324,20.9553,8.2566,20.9036,8.6756,20.7779,9.0785,20.5803,9.4547,20.3132,9.7934,19.979,10.084,19.757,10.2608,19.56,10.4609,19.3895,10.6815,19.2469,10.92,19.1336,11.1738,19.0509,11.4401,19.0002,11.7162,18.983,11.9995,19.0002,12.2828,19.0509,12.5589,19.1336,12.8252,19.2469,13.079,19.3895,13.3175,19.56,13.5381,19.757,13.7382,19.979,13.915,20.3132,14.2056,20.5803,14.5443,20.7779,14.9205,20.9036,15.3234,20.9553,15.7424,20.9306,16.1666,20.8271,16.5853,20.6425,16.9879,20.3859,17.3489,20.0749,17.6477,19.7197,17.881,19.331,18.0455,18.9191,18.1378,18.4945,18.1546,18.0677,18.0924,17.649,17.948,17.3848,17.8439,17.1131,17.7732,16.8367,17.7357,16.5587,17.7314,16.2822,17.76,16.0101,17.8214,15.7455,17.9156,15.4915,18.0423,15.2546,18.1989,15.0407,18.3808,14.8513,18.5856,14.6881,18.8107,14.5528,19.0535,14.4469,19.3115,14.3721,19.5822,14.33,19.863,14.2466,20.2989,14.0875,20.7008,13.8609,21.0612,13.5749,21.3727,13.2377,21.628,12.8575,21.8195,12.4423,21.9398,12.0005,21.9816,11.5587,21.9398,11.1435,21.8195,10.7633,21.628,10.4261,21.3727,10.1401,21.0612,9.9135,20.7008,9.7544,20.2989,9.671,19.863,9.6289,19.5821,9.5541,19.3113,9.4482,19.0532,9.3129,18.8103,9.1496,18.5851,8.9602,18.3803,8.7462,18.1983,8.5092,18.0417,8.2551,17.915,7.9904,17.8208,7.7182,17.7594,7.4416,17.7309,7.1635,17.7354,6.887,17.7729,6.6152,17.8438,6.351,17.948,5.9323,18.0924,5.5055,18.1546,5.0809,18.1378,4.669,18.0455,4.2803,17.881,3.9251,17.6477,3.6141,17.3489,3.3575,16.9879,3.1729,16.5853,3.0694,16.1666,3.0447,15.7424,3.0964,15.3234,3.2221,14.9205,3.4197,14.5443,3.6868,14.2056,4.021,13.915,4.243,13.7382,4.44,13.5381,4.6105,13.3175,4.7531,13.079,4.8664,12.8252,4.9491,12.5589,4.9998,12.2828,5.017,11.9995,4.9998,11.7162,4.9491,11.4401,4.8664,11.1738,4.7531,10.92,4.6105,10.6815,4.44,10.4609,4.243,10.2608,4.021,10.084,3.6873,9.7934,3.4207,9.4547,3.2234,9.0787,3.0979,8.676,3.0464,8.2573,3.0712,7.8334,3.1746,7.415,3.359,7.0127,3.6153,6.652,3.926,6.3532,4.2807,6.1199,4.6691,5.9552,5.0806,5.8627,5.5049,5.8456,5.9315,5.9072,6.35,6.051,6.6142,6.1551,6.8859,6.2258,7.1623,6.2633,7.4403,6.2676,7.7168,6.239,7.9889,6.1776,8.2535,6.0834,8.5075,5.9567,8.7444,5.8001,8.9583,5.6182,9.1477,5.4134,9.3109,5.1883,9.4462,4.9455,9.5521,4.6875,9.6269,4.4168,9.669,4.136];
+  for(i in 0...Std.int(outline.length/2)){var px=6+outline[i*2];var py=6+outline[i*2+1];if(i==0)g.moveTo(px,py);else g.lineTo(px,py);}
+  g.lineStyle(2.2,0xFFFFFF,1);g.drawCircle(18,18,3);
  }
  function label(text:String,size:Int):TextField{var t=new TextField();t.defaultTextFormat=new TextFormat("_sans",size,0xF2F8EF,true);t.width=300;t.height=27;t.selectable=false;t.text=text;return t;}
  function block(e:MouseEvent):Void{e.stopPropagation();}
@@ -79,5 +62,5 @@ class CompassTools extends Sprite {
  if(p.popupScale!=null)popup.scaleX=popup.scaleY=Math.max(.65,Math.min(2,p.popupScale));
  x=Math.max(0,Math.min(ctx.viewWidth-38*button.scaleX,x));y=Math.max(0,Math.min(ctx.viewHeight-38*button.scaleY,y));clampPopup();}catch(_:Dynamic){}}
  function save():Void{if(!layoutReady||ctx.viewWidth<=0||ctx.viewHeight<=0)return;try{sys.io.File.saveContent(ctx.data+"/compass-tools.json",haxe.Json.stringify({layoutVersion:4,x:popup.x,y:popup.y,buttonX:x,buttonY:y,buttonScale:button.scaleX,popupScale:popup.scaleX}));}catch(_:Dynamic){}}
- public function destroy():Void{disposed=true;finish(null);button.removeEventListener(MouseEvent.CLICK,toggle);button.removeEventListener(MouseEvent.MOUSE_DOWN,buttonDown);popup.removeEventListener(MouseEvent.MOUSE_DOWN,block);if(parent!=null)parent.removeChild(this);if(icon!=null)icon.dispose();}
+ public function destroy():Void{finish(null);button.removeEventListener(MouseEvent.CLICK,toggle);button.removeEventListener(MouseEvent.MOUSE_DOWN,buttonDown);popup.removeEventListener(MouseEvent.MOUSE_DOWN,block);if(parent!=null)parent.removeChild(this);}
 }
