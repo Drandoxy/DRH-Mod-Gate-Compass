@@ -99,7 +99,7 @@ class FloatingCompass extends Sprite {
         } catch (_:Dynamic) {}
         if (arrowArt != null) {
             var arrow = new Bitmap(arrowArt, "auto", true);
-            arrow.width = 54;
+            arrow.width = 81;
             arrow.height = 54 * arrowArt.height / arrowArt.width;
             arrow.x = -arrow.width / 2;
             arrow.y = -arrow.height / 2;
@@ -113,6 +113,7 @@ class FloatingCompass extends Sprite {
             return;
         }
         var pen = needle.graphics;
+        needle.scaleX = needle.scaleY = 1.5;
         pen.lineStyle(2, 0x754618);
         pen.beginFill(0xF3B743);
         pen.moveTo(29, 0);

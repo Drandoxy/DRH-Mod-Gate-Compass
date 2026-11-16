@@ -42,3 +42,7 @@ Unused visual buffers and generated textures are released when changing display 
 - Theme selection runs on geometry refresh, without per-frame color calculations. The route remains lavender.
 
 ![Theme color examples](docs/images/compass-theme-preview.png)
+
+## Changes in 0.2.3
+
+- Enlarged the ground direction triangle and original 2D arrow by 1.5×. The triangle keeps its base against the ring.

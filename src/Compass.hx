@@ -72,23 +72,23 @@ class Compass extends starling.display.Sprite {
         // The cyan base sits outside the ring's core, with a matching halo.
         for (stroke in [12., 8., 4.]) {
             needle.graphics.lineStyle(stroke, COLOR, stroke == 12 ? 0.08 : stroke == 8 ? 0.2 : 0.5);
-            needle.graphics.moveTo(RADIUS + 39, 0);
-            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -15.2);
-            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 15.2);
-            needle.graphics.lineTo(RADIUS + 39, 0);
+            needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 6 + ((RADIUS + 39) - (RADIUS * 0.78 * 1.45 + 6)) * 1.5, 0);
+            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -22.8);
+            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 22.8);
+            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6 + ((RADIUS + 39) - (RADIUS * 0.78 * 1.45 + 6)) * 1.5, 0);
         }
         needle.graphics.lineStyle(0, COLOR, 0);
         needle.graphics.beginFill(COLOR, 0.95);
-        needle.graphics.moveTo(RADIUS + 39, 0);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -15.2);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 15.2);
-        needle.graphics.lineTo(RADIUS + 39, 0);
+        needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 6 + ((RADIUS + 39) - (RADIUS * 0.78 * 1.45 + 6)) * 1.5, 0);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -22.8);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 22.8);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6 + ((RADIUS + 39) - (RADIUS * 0.78 * 1.45 + 6)) * 1.5, 0);
         needle.graphics.endFill();
         needle.graphics.beginFill(0xFFFFFF, 1);
-        needle.graphics.moveTo(RADIUS + 33, 0);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, -8.5);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, 8.5);
-        needle.graphics.lineTo(RADIUS + 33, 0);
+        needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 5 + ((RADIUS + 33) - (RADIUS * 0.78 * 1.45 + 5)) * 1.5, 0);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, -12.75);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, 12.75);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5 + ((RADIUS + 33) - (RADIUS * 0.78 * 1.45 + 5)) * 1.5, 0);
         needle.graphics.endFill();
         addChildAt(routeVisual, 0);
         mount.addChild(this);
