@@ -18,6 +18,8 @@ import openfl.text.TextFormat;
 /** Native world marker between scenery and actor layers, using public host access. */
 class Compass extends starling.display.Sprite {
     var ctx:Context;
+    var themeColor=0x83ECFF;
+    var ringArt:Image;
     var displayMode = "ground_line";
     var owner:ActorView;
     var routeVisual = new starling.display.Sprite();
@@ -51,7 +53,7 @@ class Compass extends starling.display.Sprite {
     var directionY = 0.;
     var size = 1.;
     static inline final RADIUS = 76.;
-    static inline final COLOR = 0x88E9E7;
+    static inline final COLOR = 0xFFFFFF;
 
     public function new(context:Context) {
         super();
@@ -65,7 +67,7 @@ class Compass extends starling.display.Sprite {
             ring.graphics.lineStyle(stroke * 0.7, COLOR, stroke == 20 ? 0.08 : stroke == 15 ? 0.15 : stroke == 10 ? 0.32 : 0.8);
             ring.graphics.drawCircle(0, 0, RADIUS * 0.78);
         }
-        ring.graphics.lineStyle(3.15, 0xF2FFFF, 1);
+        ring.graphics.lineStyle(3.15, 0xFFFFFF, 1);
         ring.graphics.drawCircle(0, 0, RADIUS * 0.78);
         // The cyan base sits outside the ring's core, with a matching halo.
         for (stroke in [12., 8., 4.]) {
@@ -82,7 +84,7 @@ class Compass extends starling.display.Sprite {
         needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 15.2);
         needle.graphics.lineTo(RADIUS + 39, 0);
         needle.graphics.endFill();
-        needle.graphics.beginFill(0xF2FFFF, 1);
+        needle.graphics.beginFill(0xFFFFFF, 1);
         needle.graphics.moveTo(RADIUS + 33, 0);
         needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, -8.5);
         needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, 8.5);
@@ -120,10 +122,13 @@ class Compass extends starling.display.Sprite {
         ringImage.scaleX=1.45;ringImage.scaleY=FLATTEN*1.45;
         ringImage.x=0;ringImage.y=0;
         ringImage.alpha=1;
+        ringArt=ringImage;
+        ringArt.color=themeColor;
         groundRing.addChild(ringImage);
         groundNeedle = baked(needle, 272, 272, 136, 136);
         groundNeedle.pivotX = groundNeedle.pivotY = 136;
         groundNeedle.rotation=heading;
+        groundNeedle.color=themeColor;
         orbit.addChild(groundNeedle);
         groundRing.addChild(orbit);
         groundGuide = new Quad(1, 2, COLOR);
@@ -221,6 +226,12 @@ class Compass extends starling.display.Sprite {
         owner = null;
     }
 
+    public function setThemeColor(color:Int):Void {
+        themeColor=color;
+        if(ringArt!=null)ringArt.color=color;
+        if(groundNeedle!=null)groundNeedle.color=color;
+    }
+
     function wantsGround():Bool { return displayMode=="ground"||displayMode=="ground_line"; }
 
     function releaseRoute():Void {
@@ -233,7 +244,7 @@ class Compass extends starling.display.Sprite {
         orbit=new starling.display.Sprite();
         if(groundBoss!=null){groundBoss.removeFromParent();groundBoss.dispose();}
         if(groundGuide!=null){groundGuide.removeFromParent();groundGuide.dispose();}
-        groundNeedle=null;groundBoss=null;groundGuide=null;
+        groundNeedle=null;groundBoss=null;groundGuide=null;ringArt=null;
         for(texture in textures)texture.dispose();for(bitmap in bitmaps)bitmap.dispose();
         textures=[];bitmaps=[];boss=new Sprite();
     }

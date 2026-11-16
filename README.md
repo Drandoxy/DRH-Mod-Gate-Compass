@@ -3,7 +3,7 @@
 <!-- drh:show -->
 Find your way to the dungeon exit with **Gate Compass**. Choose **Original 2D**, **3D**, **3D + Line**, or **Line only** in the **Compass mode** setting.
 
-The ground compass follows your hero with a cyan ring and direction triangle. The optional lavender route appears on the ground beneath characters and foreground scenery. Both compass styles follow the same route direction, even when the line is hidden. The original 2D compass can be dragged and resized; ground-compass size is adjustable in Settings.
+The ground compass follows your hero with a ring and direction triangle that change color to contrast with the dungeon theme. Ring and triangle use the same tint and opacity; the original 2D arrow uses the same theme color. The optional lavender route appears on the ground beneath characters and foreground scenery. Both compass styles follow the same route direction, even when the line is hidden. The original 2D compass can be dragged and resized; ground-compass size is adjustable in Settings.
 
 Routes are cached from the gate across the known map, with 36 starting routes per tile. The main spawn route is prioritized before the remaining cache warms. Routes account for walls, permanent obstacles, and traps; breakable props are ignored. New areas and changed obstacles update the cache. The line has softened edges and collision-checked rounded corners where space permits.
 
@@ -34,3 +34,11 @@ Unused visual buffers and generated textures are released when changing display 
 - Added Compass Toggle, default Ctrl+Shift+Q, sharing the Enable Gate Compass setting.
 - Turning off stops subscriptions and frame updates and releases route caches and visual resources.
 - Boss objective text is shown only in Original 2D mode.
+
+## Changes in 0.2.2
+
+- Added automatic contrasting compass colors for all nine dungeon theme families.
+- Ring and triangle share the same color; the 2D arrow follows the same palette.
+- Theme selection runs on geometry refresh, without per-frame color calculations. The route remains lavender.
+
+![Theme color examples](docs/images/compass-theme-preview.png)

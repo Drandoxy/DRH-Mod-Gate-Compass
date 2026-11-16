@@ -126,6 +126,15 @@ class FloatingCompass extends Sprite {
         pen.endFill();
     }
 
+    public function setThemeColor(color:Int):Void {
+        var r=((color>>16)&255)/255.;var g=((color>>8)&255)/255.;var b=(color&255)/255.;
+        needle.filters=[new ColorMatrixFilter([
+            0.299*r,0.587*r,0.114*r,0,0,
+            0.299*g,0.587*g,0.114*g,0,0,
+            0.299*b,0.587*b,0.114*b,0,0,
+            0,0,0,1,0])];
+    }
+
     public function showIdle():Void {
         visible = true;
         needle.visible = hasHeading && !boss.visible;

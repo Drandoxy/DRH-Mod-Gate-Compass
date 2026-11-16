@@ -18,6 +18,8 @@ import openfl.geom.Point;
 
 class Main extends Mod {
     var ctx:Context;
+    var palette:CompassPalette;
+    var themeColor=0x83ECFF;
     var setting:Subscription;
     var toggleSetting:Subscription;
     var enabledOption:Flag;
@@ -84,7 +86,7 @@ class Main extends Mod {
 
     function updateFloating():Void {
         if(visualMode=="flat"&&panel!=null){
-            if(floating==null){floating=new FloatingCompass(ctx);ctx.overlay.addChild(floating);}
+            if(floating==null){floating=new FloatingCompass(ctx);floating.setThemeColor(themeColor);ctx.overlay.addChild(floating);}
             floating.visible=panel.visible;
         }else if(floating!=null){
             floating.destroy();if(floating.parent!=null)floating.parent.removeChild(floating);floating=null;
@@ -93,7 +95,9 @@ class Main extends Mod {
 
     function setEnabled(enabled:Bool):Void {
         if (enabled && panel == null) {
+            palette=new CompassPalette(ctx);
             panel = new Compass(ctx);
+            panel.setThemeColor(themeColor);
             panel.setSize(compassSize);
             panel.setDisplayMode(visualMode);
             updateFloating();
@@ -131,6 +135,7 @@ class Main extends Mod {
             clearFloor();
             hero = null;
             grid = null;
+            palette = null;
             panel.destroy();
             panel = null;
             if (floating != null) {
@@ -374,6 +379,7 @@ class Main extends Mod {
                 gateScore = score;
             }
         }
+        if(palette!=null){themeColor=palette.detect(ctx);panel.setThemeColor(themeColor);if(floating!=null)floating.setThemeColor(themeColor);}
         lastObstacleRefresh = now;
         grid.refresh(floor, tiles);
         grid.prepareField(goal, gate, gateId);
