@@ -49,6 +49,7 @@ class Compass extends starling.display.Sprite {
     var heading = 0.;
     var hasHeading = false;
     var lastTurn = 0;
+    public var smooth=true;
     var directionX = 0.;
     var directionY = 0.;
     var size = 1.;
@@ -270,6 +271,7 @@ class Compass extends starling.display.Sprite {
     public function setDisplayMode(value:String):Void {
         displayMode=value;
         groundRing.visible=wantsGround();
+        if(wantsGround()&&groundNeedle==null&&owner!=null&&mount.parent!=null)buildVisuals();
         if(!wantsGround()&&groundNeedle!=null)releaseGround();
         var line=value=="ground_line"||value=="line";
         if(!line)releaseRoute();
@@ -324,6 +326,7 @@ class Compass extends starling.display.Sprite {
             directionY = dy;
             if (!hasHeading) groundNeedle.rotation = heading;
             hasHeading = true;
+            if(!smooth)groundNeedle.rotation=heading;
         }
         groundNeedle.visible = hasHeading;
         positionArrow();
@@ -334,8 +337,7 @@ class Compass extends starling.display.Sprite {
         lastTurn = now;
         if (groundNeedle == null || !visible || !hasHeading || groundBoss.visible) return;
         var delta = (heading - groundNeedle.rotation + Math.PI * 3) % (Math.PI * 2) - Math.PI;
-        var limit = 1.5 * Math.PI / 180 * elapsed;
-        groundNeedle.rotation += Math.max(-limit, Math.min(limit, delta));
+        groundNeedle.rotation += smooth ? delta * (1-Math.exp(-elapsed/50.)) : delta;
         positionArrow();
         groundGuide.visible = false;
     }
@@ -353,7 +355,7 @@ class Compass extends starling.display.Sprite {
         for (i in 0...points.length - 1) {
             var a = points[i]; var b = points[i + 1];
             if (openfl.geom.Point.distance(a, b) < 0.01) continue;
-            var count = Std.int(Math.max(1, Math.ceil(openfl.geom.Point.distance(a, b) / 32)));
+            var count = Std.int(Math.max(1, Math.ceil(openfl.geom.Point.distance(a, b) / 5)));
             for (j in 1...count + 1) displayRoute.push(new openfl.geom.Point(a.x + (b.x - a.x) * j / count, a.y + (b.y - a.y) * j / count));
         }
         routeBatches = [];

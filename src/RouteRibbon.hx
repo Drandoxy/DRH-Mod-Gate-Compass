@@ -40,6 +40,6 @@ class RouteRibbon {
                 vertices.setColor(v+4+j,"color",color);vertices.setAlpha(v+4+j,"color",alpha);
             }
         }
-        return new RouteBatch(vertices, opacity);
+        return new RouteBatch(vertices, opacity, [for(i in 0...points.length-1) Point.distance(points[i],points[i+1])]);
     }
 }

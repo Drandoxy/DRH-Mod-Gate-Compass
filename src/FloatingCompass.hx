@@ -27,6 +27,7 @@ class FloatingCompass extends Sprite {
     var heading:Float = 0;
     var hasHeading = false;
     var lastTurn = 0;
+    public var smooth=true;
     var dragKind = 0;
     var startX:Float;
     var startY:Float;
@@ -128,12 +129,8 @@ class FloatingCompass extends Sprite {
     }
 
     public function setThemeColor(color:Int):Void {
-        var r=((color>>16)&255)/255.;var g=((color>>8)&255)/255.;var b=(color&255)/255.;
-        needle.filters=[new ColorMatrixFilter([
-            0.299*r,0.587*r,0.114*r,0,0,
-            0.299*g,0.587*g,0.114*g,0,0,
-            0.299*b,0.587*b,0.114*b,0,0,
-            0,0,0,1,0])];
+        // The original 2D compass keeps its golden artwork in every dungeon.
+        needle.filters = [];
     }
 
     public function showIdle():Void {
@@ -152,6 +149,7 @@ class FloatingCompass extends Sprite {
                 hasHeading = true;
             }
         }
+        if(!smooth&&hasHeading)needle.rotation=heading;
         needle.visible = hasHeading;
         clampPosition();
     }
@@ -162,8 +160,7 @@ class FloatingCompass extends Sprite {
         if (!visible || !needle.visible || !hasHeading) return;
 
         var delta = (heading - needle.rotation + 540) % 360 - 180;
-        var limit = 1.5 * elapsed;
-        needle.rotation += Math.max(-limit, Math.min(limit, delta));
+        needle.rotation += smooth ? delta * (1-Math.exp(-elapsed/50.)) : delta;
     }
 
     public function resetHeading():Void {
