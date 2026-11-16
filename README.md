@@ -14,7 +14,3 @@ Drag the compass to move it or drag its bottom-right handle to resize it. Its po
 <td width="30%" align="center"><img src="docs/images/boss-objective.png" alt="Gate Compass displaying Defeat the boss on three centered lines" width="350"><br>Boss objective</td>
 </tr>
 </table>
-
-## Local routing diagnostics
-
-Right-click the compass to save a snapshot when it points the wrong way. A route failure lasting two seconds is captured once per floor, even if the arrow is holding its last direction. The mod keeps up to 16 snapshots in its local data folder under `route-captures`.

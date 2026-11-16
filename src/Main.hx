@@ -11,7 +11,6 @@ import mods.api.dungeon.Hero;
 import mods.api.dungeon.Tile;
 import openfl.Lib;
 import openfl.events.Event;
-import openfl.events.MouseEvent;
 import openfl.geom.Point;
 
 class Main extends Mod {
@@ -24,10 +23,6 @@ class Main extends Mod {
     var startupRefresh = 0;
     var nextSearch = 0;
     var panel:Compass;
-    var captures:RouteCapture;
-    var blankSince = -1;
-    var autoCaptured = false;
-    var nextManualCapture = 0;
     var hero:Hero;
     var floorId:UInt = 0;
     var grid:WalkGrid;
@@ -45,11 +40,9 @@ class Main extends Mod {
     var checkedWaypoint:Point;
     var checkedX = 0.;
     var checkedY = 0.;
-    var reportedRouteStates:Map<String, Bool> = new Map();
 
     override public function init(context:Context):Void {
         ctx = context;
-        captures = new RouteCapture(context.data);
         var enabled = context.settings.flag("enableCompass", "Enable Gate Compass", "Show directions to the dungeon exit.", true);
         setting = enabled.onChange(setEnabled);
         setEnabled(enabled.value);
@@ -58,7 +51,6 @@ class Main extends Mod {
     function setEnabled(enabled:Bool):Void {
         if (enabled && panel == null) {
             panel = new Compass(ctx);
-            panel.addEventListener(MouseEvent.RIGHT_CLICK, captureManually);
             grid = new WalkGrid();
             ctx.overlay.addChild(panel);
             subscriptions.push(ctx.onFloorEnter(onFloorEnter));
@@ -89,7 +81,6 @@ class Main extends Mod {
             clearFloor();
             hero = null;
             grid = null;
-            panel.removeEventListener(MouseEvent.RIGHT_CLICK, captureManually);
             panel.destroy();
             ctx.overlay.removeChild(panel);
             panel = null;
@@ -130,9 +121,6 @@ class Main extends Mod {
         nextUpdate = 0;
         lastCell = -1;
         lastSearchRoom = null;
-        reportedRouteStates = new Map();
-        blankSince = -1;
-        autoCaptured = false;
         if (grid != null) grid.clear();
         if (panel != null) {
             panel.visible = false;
@@ -168,7 +156,6 @@ class Main extends Mod {
         if (navigation != null && (navigation.getTopUILayer() == "EXIT_DUNGEON"
             || (navigation.layerDepth > 1 && navigation.getAllCurrentLayers().indexOf("EXIT_DUNGEON, ") >= 0))) {
             panel.visible = false;
-            blankSince = -1;
             return;
         }
 
@@ -182,17 +169,13 @@ class Main extends Mod {
             nextGeometry = now + (goal == null || floor.box2DWorld == null ? 120 : 300);
         }
         if (goal == null || hero == null) {
-            var reason = goal == null ? "waiting for exit tile or collision world" : "waiting for local hero";
-            reportRouteState(reason);
             panel.showIdle();
-            captureIfBlank(now, reason);
             return;
         }
 
         var x = hero.x;
         var y = hero.y;
         if (bossRoom && gate == null && goal.contains(x, y)) {
-            blankSince = -1;
             panel.showBoss();
             return;
         }
@@ -219,21 +202,16 @@ class Main extends Mod {
             nextSearch = now + 180;
             lastCell = cell;
             waypoint = grid.waypoint(x, y, goal, gate, gateId);
-            if (waypoint == null) reportRouteState(grid.routeStatus);
         }
         if (waypoint == null || !canDisplayWaypoint(x, y)) {
-            var reason = waypoint == null ? grid.routeStatus : "display segment blocked";
             if (waypoint != null) {
-                reportRouteState("display segment blocked");
                 lastCell = -1;
                 waypoint = null;
                 grid.invalidateRoute();
             }
             panel.showIdle();
-            captureIfBlank(now, reason);
             return;
         }
-        blankSince = -1;
         panel.aim(waypoint.x - x, waypoint.y - y);
     }
 
@@ -251,54 +229,6 @@ class Main extends Mod {
         checkedX = x;
         checkedY = y;
         return true;
-    }
-
-    function captureIfBlank(now:Int, reason:String):Void {
-        if (autoCaptured) return;
-        if (blankSince < 0) blankSince = now;
-        if (now - blankSince < 2000) return;
-        autoCaptured = true;
-        saveCapture(panel.displayedHeading() == null ? "blank-arrow" : "held-heading", reason);
-    }
-
-    function captureManually(event:MouseEvent):Void {
-        event.stopPropagation();
-        var now = Lib.getTimer();
-        if (now < nextManualCapture) return;
-        nextManualCapture = now + 1000;
-        saveCapture("manual", grid == null ? "grid unavailable" : grid.routeStatus);
-    }
-
-    function saveCapture(kind:String, reason:String):Void {
-        var floor = ctx.state.floor;
-        if (panel == null || !panel.visible || floor == null || floor.id != floorId) return;
-        try {
-            var name = captures.save({
-                schema: 1,
-                kind: kind,
-                reason: reason,
-                map: floor.map,
-                floor: floor.number,
-                hero: hero == null ? null : {x: hero.x, y: hero.y},
-                exit: goal == null ? null : {id: goal.id, x: goal.x, y: goal.y, category: goal.category},
-                gate: gate == null ? null : {x: gate.x, y: gate.y},
-                waypoint: waypoint == null ? null : {x: waypoint.x, y: waypoint.y},
-                displayedHeading: panel.displayedHeading(),
-                tiles: [for (tile in floor.tiles) {id: tile.id, x: tile.x, y: tile.y,
-                    category: tile.category, exits: tile.exits}],
-                geometry: grid.captureGeometry()
-            });
-            ctx.log("Gate Compass saved route capture " + name);
-        } catch (error:Dynamic) {
-            ctx.log("Gate Compass could not save route capture: " + Std.string(error));
-        }
-    }
-
-    function reportRouteState(state:String):Void {
-        if (reportedRouteStates.exists(state)) return;
-        reportedRouteStates.set(state, true);
-        var floor = ctx.state.floor;
-        ctx.log("Gate Compass route: " + state + (floor == null ? "" : " on " + floor.map + " floor " + floor.number));
     }
 
     function refreshGeometry(floor:DistributedDungeonFloor, now:Int):Bool {

@@ -126,10 +126,6 @@ class Compass extends Sprite {
         pen.endFill();
     }
 
-    public function displayedHeading():Null<Float> {
-        return visible && needle.visible && hasHeading ? needle.rotation : null;
-    }
-
     public function showIdle():Void {
         visible = true;
         needle.visible = hasHeading && !boss.visible;

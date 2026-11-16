@@ -2,7 +2,7 @@
   "id": "gate_compass",
   "name": "Gate Compass",
   "description": "A movable compass that guides your hero to the dungeon exit.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Drandox",
   "api": "1.4.0",
   "entry": "Main",

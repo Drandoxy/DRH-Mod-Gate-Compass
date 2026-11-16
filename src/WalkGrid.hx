@@ -21,7 +21,6 @@ class WalkGrid {
     var cachedInside = false;
     var gentleTarget:Point;
     var gentleOrigin:Point;
-    public var routeStatus(default, null) = "waiting for walkable floor";
     var left:Float;
     var top:Float;
     var step:Float;
@@ -100,24 +99,6 @@ class WalkGrid {
             }
             body = body.GetNext();
         }
-    }
-
-    public function captureGeometry():Dynamic {
-        var polygons:Array<Array<Dynamic>> = [];
-        var circles:Array<Dynamic> = [];
-        var rows:Array<String> = [];
-        forEachCollision(function(points) {
-            polygons.push([for (p in points) {x: p.x, y: p.y}]);
-        }, function(x, y, radius) {
-            circles.push({x: x, y: y, radius: radius});
-        });
-        if (cells.length > 0) for (row in 0...height) {
-            var line = new StringBuf();
-            for (col in 0...width) line.add(cells[row * width + col] ? "1" : "0");
-            rows.push(line.toString());
-        }
-        return {left: left, top: top, step: step, width: width, height: height,
-            walkableRows: rows, polygons: polygons, circles: circles};
     }
 
     // Keep a small clearance around static collision shapes without sealing narrow doors.
@@ -262,10 +243,8 @@ class WalkGrid {
 
     public function waypoint(x:Float, y:Float, goal:Tile, gate:Point, gateId:UInt = 0):Point {
         var start = cellAt(x, y);
-        routeStatus = "hero outside the loaded grid";
         if (start < 0 || rooms[start] == null) return null;
         var heroCell = start;
-        routeStatus = "no clear step from hero to grid";
         if (!walkable(start)) {
             var snapped = -1;
             var distance = Math.POSITIVE_INFINITY;
@@ -284,7 +263,6 @@ class WalkGrid {
             start = snapped;
         }
 
-        routeStatus = "no walkable connection to exit room";
         var inside = goal.contains(x, y);
         if (inside == cachedInside && cachedRoute.length > 0) {
             var at = cachedRoute.indexOf(start);
@@ -350,7 +328,6 @@ class WalkGrid {
         if (best < 0) return null;
         if (best == start) {
             if (heroCell != start) return point(start);
-            routeStatus = inside ? "inside exit room, no gate approach" : "at blocked doorway approach";
             if (inside && gate != null && (target == start || bestDistance <= 4 * step * step)
                 && canAim(x, y, gate, gateId)) return gate;
             return null;
@@ -364,7 +341,6 @@ class WalkGrid {
         cachedRoute = route.copy();
         cachedRoute.push(start);
         cachedInside = inside;
-        routeStatus = "first route segment obstructed";
         if (heroCell != start) return point(start);
         return nextWaypoint(x, y, start, route);
     }
