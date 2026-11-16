@@ -11,18 +11,26 @@ import mods.api.dungeon.Hero;
 import mods.api.dungeon.Tile;
 import openfl.Lib;
 import openfl.events.Event;
+import distributedObjects.HeroGameObject;
 import openfl.geom.Point;
 
 class Main extends Mod {
     var ctx:Context;
     var setting:Subscription;
+    var modeSetting:Subscription;
+    var visualMode = "ground_line";
+    var floating:FloatingCompass;
+    var sizeSetting:Subscription;
+    var compassSize = 1.;
     var subscriptions:Array<Subscription> = [];
     var geometrySubscriptions:Array<ModSubscription> = [];
     var geometryDirty = true;
     var tileLayout = "";
     var startupRefresh = 0;
+    var startupPass = 0;
     var nextSearch = 0;
     var panel:Compass;
+    var lastRegion = "";
     var hero:Hero;
     var floorId:UInt = 0;
     var grid:WalkGrid;
@@ -32,6 +40,7 @@ class Main extends Mod {
     var waypoint:Point;
     var bossRoom = false;
     var nextGeometry = 0;
+    var lastObstacleRefresh = 0;
     var nextUpdate = 0;
     var lastCell = -1;
     var lastSearchRoom:Tile;
@@ -43,16 +52,44 @@ class Main extends Mod {
 
     override public function init(context:Context):Void {
         ctx = context;
+        var mode = context.settings.choice("compassMode", "Compass mode",
+            "Choose the display. All modes follow the same cached route, even when the line is hidden.",
+            [{value:"flat",label:"Original 2D"},{value:"ground",label:"3D"},
+             {value:"ground_line",label:"3D + Line"},{value:"line",label:"Line only"}],"ground_line");
+        visualMode = mode.value;
+        modeSetting = mode.onChange(function(value) {
+            visualMode = value;
+            if (panel != null) panel.setDisplayMode(value);
+            updateFloating();
+        });
+        var size = context.settings.slider("groundCompassSize", "Compass size",
+            "Size of the direction ring beneath your hero.", 0.5, 2, 0.1, 1, 1);
+        compassSize = size.value;
+        sizeSetting = size.onChange(function(value) {
+            compassSize = value;
+            if (panel != null) panel.setSize(value);
+        });
         var enabled = context.settings.flag("enableCompass", "Enable Gate Compass", "Show directions to the dungeon exit.", true);
         setting = enabled.onChange(setEnabled);
         setEnabled(enabled.value);
     }
 
+    function updateFloating():Void {
+        if(visualMode=="flat"&&panel!=null){
+            if(floating==null){floating=new FloatingCompass(ctx);ctx.overlay.addChild(floating);}
+            floating.visible=panel.visible;
+        }else if(floating!=null){
+            floating.destroy();if(floating.parent!=null)floating.parent.removeChild(floating);floating=null;
+        }
+    }
+
     function setEnabled(enabled:Bool):Void {
         if (enabled && panel == null) {
             panel = new Compass(ctx);
+            panel.setSize(compassSize);
+            panel.setDisplayMode(visualMode);
+            updateFloating();
             grid = new WalkGrid();
-            ctx.overlay.addChild(panel);
             subscriptions.push(ctx.onFloorEnter(onFloorEnter));
             subscriptions.push(ctx.onFloorExit(function(_) clearFloor()));
             subscriptions.push(ctx.onHeroSpawned(trackHero));
@@ -67,7 +104,12 @@ class Main extends Mod {
                 }
             }));
             subscriptions.push(ctx.onHeroDespawned(function(h) {
-                if (h == hero) hero = null;
+                if (h == hero) {
+                    hero = null;
+                    panel.visible = false;
+                    if (floating != null) floating.visible = false;
+                    panel.detach();
+                }
             }));
             for (h in ctx.state.heroes) trackHero(h);
             if (ctx.state.floor != null) onFloorEnter(ctx.state.floor);
@@ -82,8 +124,12 @@ class Main extends Mod {
             hero = null;
             grid = null;
             panel.destroy();
-            ctx.overlay.removeChild(panel);
             panel = null;
+            if (floating != null) {
+                floating.destroy();
+                if (floating.parent != null) floating.parent.removeChild(floating);
+                floating = null;
+            }
         }
     }
 
@@ -94,8 +140,10 @@ class Main extends Mod {
     function collisionActorChanged(object:Dynamic):Void {
         if (floorId == 0) return;
         var npc = Std.downcast(object, NPCGameObject);
-        if (npc != null && npc.gmNpc != null
-            && (npc.gmNpc.Species == "DOOR" || (npc.gmNpc.Species != "TRAP" && npc.isProp))) {
+        if (npc != null && npc.isProp && npc.gmNpc != null && npc.gmNpc.IsAttackable
+            && npc.gmNpc.Species != "TRAP") return;
+        if (npc != null && npc.distributedDungeonFloor == liveFloor() && npc.gmNpc != null
+            && (npc.gmNpc.Species == "DOOR" || npc.gmNpc.Species == "TRAP" || npc.isProp)) {
             geometryDirty = true;
         }
     }
@@ -117,14 +165,19 @@ class Main extends Mod {
         geometryDirty = true;
         tileLayout = "";
         startupRefresh = 0;
+        startupPass = 0;
         nextSearch = 0;
         nextUpdate = 0;
         lastCell = -1;
         lastSearchRoom = null;
+        lastRegion = "";
         if (grid != null) grid.clear();
         if (panel != null) {
             panel.visible = false;
+            if (floating != null) floating.visible = false;
             panel.resetHeading();
+            if (floating != null) floating.resetHeading();
+            panel.detach();
         }
     }
 
@@ -138,28 +191,43 @@ class Main extends Mod {
     function update(event:Event):Void {
         var now = Lib.getTimer();
         panel.turn(now);
-        if (now < nextUpdate) return;
-        nextUpdate = now + 65;
+        if (floating != null) floating.turn(now);
+        if (now < nextUpdate) {
+            return;
+        }
+        nextUpdate = now + 16;
+        if (grid != null && hero != null) grid.prioritize(hero.x,hero.y);
+        if (grid != null && grid.advanceField()) { nextSearch = 0; lastCell = -1; }
         var facade = ctx.core.facade;
         if (floorId == 0 || facade == null || facade.mainStateMachine == null
             || facade.mainStateMachine.currentStateName != "RunState" || facade.gameObjectManager == null) {
             panel.visible = false;
+            if (floating != null) floating.visible = false;
             return;
         }
         var floor = liveFloor();
         if (floor == null || floor.isDestroyed) {
             panel.visible = false;
+            if (floating != null) floating.visible = false;
             return;
         }
 
         var navigation = facade.menuNavigationController;
         if (navigation != null && (navigation.getTopUILayer() == "EXIT_DUNGEON"
-            || (navigation.layerDepth > 1 && navigation.getAllCurrentLayers().indexOf("EXIT_DUNGEON, ") >= 0))) {
+            || navigation.getTopUILayer() == "SETTINGS_MENU"
+            || (navigation.layerDepth > 1 && (navigation.getAllCurrentLayers().indexOf("EXIT_DUNGEON, ") >= 0
+                || navigation.getAllCurrentLayers().indexOf("SETTINGS_MENU, ") >= 0)))) {
             panel.visible = false;
+            if (floating != null) floating.visible = false;
             return;
         }
 
+        if (hero != null) {
+            var object = Std.downcast(facade.gameObjectManager.getReferenceFromId(hero.id), HeroGameObject);
+            if (object != null && object.heroView != null) panel.attach(object.heroView);
+        }
         if (!panel.visible) panel.showIdle();
+        if (floating != null) floating.visible = visualMode == "flat";
         if (now >= nextGeometry) {
             if (hero == null) for (h in ctx.state.heroes) trackHero(h);
             if (refreshGeometry(floor, now)) {
@@ -169,7 +237,8 @@ class Main extends Mod {
             nextGeometry = now + (goal == null || floor.box2DWorld == null ? 120 : 300);
         }
         if (goal == null || hero == null) {
-            panel.showIdle();
+            panel.visible = false;
+            if (floating != null) floating.visible = false;
             return;
         }
 
@@ -177,42 +246,52 @@ class Main extends Mod {
         var y = hero.y;
         if (bossRoom && gate == null && goal.contains(x, y)) {
             panel.showBoss();
+            if (floating != null && visualMode == "flat") floating.showBoss();
             return;
         }
+        var nearWaypoint = waypoint != null && waypoint != gate
+            && Point.distance(new Point(x, y), waypoint) <= 18;
         if (waypoint != null && waypoint != gate
-            && passedWaypoint(lastSearchX, lastSearchY, x, y, waypoint)) {
+            && (nearWaypoint || passedWaypoint(lastSearchX, lastSearchY, x, y, waypoint))) {
             // The hero crossed the target between route searches. Keep the
             // current heading until a forward waypoint is available.
+            grid.invalidateRoute();
             waypoint = null;
             checkedWaypoint = null;
             lastCell = -1;
+            nextSearch = 0;
         }
 
         var cell = grid.cellAt(x, y);
         var room = grid.roomAtCell(cell);
         var enteredRoom = room != null && room != lastSearchRoom;
+        var region = grid.regionAt(x, y);
+        var enteredRegion = region != "" && region != lastRegion;
         var movedWhileIdle = waypoint == null
             && (Math.abs(x - lastSearchX) >= 8 || Math.abs(y - lastSearchY) >= 8);
         // The normal cooldown still applies to movement inside a room.
         // A doorway crossing gets a fresh target immediately.
-        if (enteredRoom || (now >= nextSearch && (cell != lastCell || movedWhileIdle))) {
+        if (enteredRoom || enteredRegion || (now >= nextSearch && (cell != lastCell || movedWhileIdle || nearWaypoint || waypoint == null))) {
+            if (enteredRoom || enteredRegion) grid.invalidateRoute();
+            lastRegion = region;
             lastSearchRoom = room;
             lastSearchX = x;
             lastSearchY = y;
-            nextSearch = now + 180;
+            nextSearch = now + 80;
             lastCell = cell;
             waypoint = grid.waypoint(x, y, goal, gate, gateId);
+            if (waypoint == null) nextSearch = now + 250;
         }
-        if (waypoint == null || !canDisplayWaypoint(x, y)) {
-            if (waypoint != null) {
-                lastCell = -1;
-                waypoint = null;
-                grid.invalidateRoute();
-            }
+        // A cached line remains drawable even if the current tangent cannot
+        // be sampled while crossing a cell or awaiting another anchor.
+        if (grid.routeLine.length > 1) panel.setRoute(grid.routeLine);
+        if (waypoint == null) {
             panel.showIdle();
+            if (floating != null && visualMode == "flat") floating.showIdle();
             return;
         }
-        panel.aim(waypoint.x - x, waypoint.y - y);
+        panel.aim(grid.routeDirection.x, grid.routeDirection.y);
+        if (floating != null && visualMode == "flat") floating.aim(grid.routeDirection.x, grid.routeDirection.y);
     }
 
     static function passedWaypoint(fromX:Float, fromY:Float, x:Float, y:Float, target:Point):Bool {
@@ -238,11 +317,19 @@ class Main extends Mod {
         var oldGate = gate;
         var oldGateId = gateId;
         var tiles = [for (tile in current.tiles) if (tile.category != "FILLER_TILE") tile];
-        var layout = [for (tile in tiles) tile.id + ":" + tile.x + ":" + tile.y + ":" + tile.category].join("|");
+        var parts = [for (tile in tiles)
+            tile.id + ":" + tile.x + ":" + tile.y + ":" + tile.category + ":" + tile.exits.join(",")];
+        parts.sort(Reflect.compare);
+        var layout = parts.join("|");
         var delayedRefresh = startupRefresh > 0 && now >= startupRefresh;
+        if (tileLayout == layout && geometryDirty && !delayedRefresh && now - lastObstacleRefresh < 1000) return false;
         if (!geometryDirty && tileLayout == layout && !delayedRefresh) return false;
         if (tileLayout == "" && layout != "") startupRefresh = now + 650;
-        if (delayedRefresh) startupRefresh = -1;
+        if (delayedRefresh) {
+            startupPass++;
+            startupRefresh = startupPass < 3 ? now + 900 : -1;
+        }
+        var obstaclesChanged = geometryDirty || delayedRefresh;
         tileLayout = layout;
         geometryDirty = false;
         goal = null;
@@ -261,6 +348,7 @@ class Main extends Mod {
 
         // These two authored exit rooms complete the floor through the boss life trigger.
         bossRoom = goal.category == "BOSS_TILE" || goal.id == "454.1334956026168" || goal.id == "271.1333708475942";
+        var gateScore = 0;
         if (floor.remoteActors != null) for (object in floor.remoteActors.toArray()) {
             var npc = Std.downcast(object, NPCGameObject);
             if (npc == null || npc.isDestroyed || npc.gmNpc == null || npc.position == null) continue;
@@ -269,17 +357,18 @@ class Main extends Mod {
             var kind = Std.string(npc.gmNpc.Constant).toUpperCase();
             var type:Int = npc.type;
             var suffix = type % 10000;
-            if (kind == "JASONS_DUNGEON_EXIT" || (kind.indexOf("EXIT") >= 0 && (kind.indexOf("GATE") >= 0 || suffix == 101 || suffix == 201))) {
+            var score = kind == "JASONS_DUNGEON_EXIT" ? 3
+                : kind.indexOf("EXIT") >= 0 && (kind.indexOf("GATE") >= 0 || suffix == 101 || suffix == 201) ? 2
+                : !bossRoom && type >= 2000000 && type < 3000000 && (suffix == 101 || suffix == 201) ? 1 : 0;
+            if (score > gateScore) {
                 gate = new Point(p.x, p.y);
                 gateId = npc.id;
-                break;
-            }
-            if (gate == null && !bossRoom && type >= 2000000 && type < 3000000 && (suffix == 101 || suffix == 201)) {
-                gate = new Point(p.x, p.y);
-                gateId = npc.id;
+                gateScore = score;
             }
         }
+        lastObstacleRefresh = now;
         grid.refresh(floor, tiles);
+        grid.prepareField(goal, gate, gateId);
         // Thin collision shapes can change the edges without changing any cell center.
         waypoint = null;
         checkedWaypoint = null;
@@ -290,6 +379,10 @@ class Main extends Mod {
     }
 
     override public function dispose():Void {
+        if (modeSetting != null) modeSetting.cancel();
+        modeSetting = null;
+        if (sizeSetting != null) sizeSetting.cancel();
+        sizeSetting = null;
         if (setting != null) setting.cancel();
         setting = null;
         if (panel != null) setEnabled(false);

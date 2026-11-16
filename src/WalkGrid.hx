@@ -11,14 +11,30 @@ import mods.api.dungeon.Tile;
 import openfl.geom.Point;
 
 class WalkGrid {
+    public var routeLine:Array<Point> = [];
+    public var routeDirection = new Point(1,0);
+    var anchorRoutes:Map<String,Array<Array<Point>>> = new Map();
+    var anchorTiles:Array<Tile> = [];
+    var anchorCursor = 0;
+    var knownLines:Array<Array<Point>> = [];
+    var hazards:Array<Bool> = [];
+    var clearance:Array<Int> = [];
+    var markingHazard = false;
+    var field:RouteField;
+    var focusCell = -1;
+    var focusAnnounced = false;
+    var anchorsOrdered = false;
+    var cachedQueries = false;
+    var routeGoal = "";
+    var routeGateId:UInt = 0;
+    var shapeKey = "";
+    var shapeParts:Array<String> = [];
     var cells:Array<Bool> = [];
     var rooms:Array<Tile> = [];
     var tilesByPosition:Map<String, Tile> = new Map();
     var nearCollider:Array<Bool> = [];
     var floor:DistributedDungeonFloor;
     var edgeChecks:Map<Int, Bool> = new Map();
-    var cachedRoute:Array<Int> = [];
-    var cachedInside = false;
     var gentleTarget:Point;
     var gentleOrigin:Point;
     var left:Float;
@@ -31,6 +47,12 @@ class WalkGrid {
 
     public function refresh(floor:DistributedDungeonFloor, tiles:Array<Tile>):Void {
         this.floor = floor;
+        var previousLine = routeLine;
+        var previousField = field;
+        var previousEdges = edgeChecks;
+        field = null;
+        routeLine = [];
+        shapeParts = [for (tile in tiles) tile.id + ":" + tile.x + ":" + tile.y];
         edgeChecks = new Map();
         invalidateRoute();
         cells = [];
@@ -49,13 +71,14 @@ class WalkGrid {
             right = Math.max(right, tile.x + Tile.SIZE);
             bottom = Math.max(bottom, tile.y + Tile.SIZE);
         }
-        var subdivisions = Std.int(Math.max(1, Math.min(37,
+        var subdivisions = Std.int(Math.max(1, Math.min(25,
             Math.floor(256 * Tile.SIZE / Math.max(right - left, bottom - top)))));
         step = Tile.SIZE / subdivisions;
         width = Std.int(Math.ceil((right - left) / step));
         height = Std.int(Math.ceil((bottom - top) / step));
 
         cells = [for (i in 0...width * height) false];
+        hazards = [for (i in 0...width * height) false];
         nearCollider = [for (i in 0...width * height) false];
         for (tile in tiles) {
             tilesByPosition.set(tileKey(tile.x, tile.y), tile);
@@ -69,16 +92,65 @@ class WalkGrid {
         }
 
         forEachCollision(markPolygon, markCircle);
+        buildClearance();
+        var key = shapeParts.join(";");
+        if (key == shapeKey) { routeLine = previousLine; field = previousField; edgeChecks = previousEdges; }
+        shapeKey = key;
+        shapeParts = [];
+    }
+
+    function buildClearance():Void {
+        clearance = [for (i in 0...cells.length) 1000];
+        var queue:Array<Int> = [];
+        for (i in 0...cells.length) {
+            var col = i % width; var row = Std.int(i / width);
+            if (!cells[i] || col == 0 || row == 0 || col == width - 1 || row == height - 1) {
+                clearance[i] = 0; queue.push(i);
+            }
+        }
+        var head = 0;
+        while (head < queue.length) {
+            var i = queue[head++];
+            var col = i % width; var row = Std.int(i / width);
+            for (next in [index(col - 1, row), index(col + 1, row), index(col, row - 1), index(col, row + 1)]) {
+                if (next < 0 || next >= cells.length || clearance[next] <= clearance[i] + 1) continue;
+                clearance[next] = clearance[i] + 1; queue.push(next);
+            }
+        }
+    }
+
+    function corridorClear(x:Float, y:Float, target:Point, ignoredGate:UInt = 0):Bool {
+        if (cachedQueries) return clearGridLine(x, y, target);
+        if (!canAim(x, y, target, ignoredGate) || !clearGridLine(x, y, target)) return false;
+        var dx = target.x - x; var dy = target.y - y;
+        var length = Math.sqrt(dx * dx + dy * dy);
+        if (length < 0.001) return true;
+        var radius = 16.;
+        var nx = -dy / length * radius; var ny = dx / length * radius;
+        for (side in [-1, 1]) {
+            var end = new Point(target.x + nx * side, target.y + ny * side);
+            // The center grid already includes the agent radius. Side rays
+            // check actual shapes without inflating that radius a second time.
+            if (!canAim(x + nx * side, y + ny * side, end, ignoredGate)) return false;
+        }
+        return true;
     }
 
     function forEachCollision(polygonFound:Array<Point>->Void, circleFound:Float->Float->Float->Void):Void {
         if (floor == null || floor.box2DWorld == null) return;
         var body = floor.box2DWorld.GetBodyList();
         while (body != null) {
-            if (body.IsActive()) {
+            var actorData=body.GetUserData();
+            var actor=actorData==null||floor.remoteActors==null?null:Std.downcast(floor.remoteActors.itemFor(actorData),NPCGameObject);
+            var persistentTrap=actor!=null&&actor.gmNpc!=null&&actor.gmNpc.Species=="TRAP";
+            if (body.IsActive() || persistentTrap) {
                 var fixture = body.GetFixtureList();
                 while (fixture != null) {
-                    if (blocksMovement(fixture)) {
+                    var data = body.GetUserData();
+                    var npc = data == null || floor.remoteActors == null ? null
+                        : Std.downcast(floor.remoteActors.itemFor(data), NPCGameObject);
+                    markingHazard = npc != null && npc.gmNpc != null && npc.gmNpc.Species == "TRAP";
+                    if (markingHazard || blocksMovement(fixture)) {
                         var polygon = Std.downcast(fixture.GetShape(), B2PolygonShape);
                         var circle = Std.downcast(fixture.GetShape(), B2CircleShape);
                         if (polygon != null && polygon.GetVertexCount() >= 3) {
@@ -94,6 +166,7 @@ class WalkGrid {
                             circleFound(center.x * 50, center.y * 50, circle.GetRadius() * 50);
                         }
                     }
+                    markingHazard = false;
                     fixture = fixture.GetNext();
                 }
             }
@@ -102,9 +175,10 @@ class WalkGrid {
     }
 
     // Keep a small clearance around static collision shapes without sealing narrow doors.
-    static inline final CLEARANCE = 5.;
+    static inline final CLEARANCE = 20.;
 
     function markCircle(cx:Float, cy:Float, radius:Float):Void {
+        shapeParts.push((markingHazard ? "H" : "C") + cx + ":" + cy + ":" + radius);
         var extent = radius + CLEARANCE;
         markCells(cx - extent, cy - extent, cx + extent, cy + extent, function(x, y) {
             var dx = x - cx;
@@ -114,6 +188,7 @@ class WalkGrid {
     }
 
     function markPolygon(points:Array<Point>):Void {
+        shapeParts.push((markingHazard ? "H" : "P") + [for (p in points) p.x + ":" + p.y].join(","));
         var minX = Math.POSITIVE_INFINITY;
         var minY = Math.POSITIVE_INFINITY;
         var maxX = Math.NEGATIVE_INFINITY;
@@ -152,12 +227,19 @@ class WalkGrid {
         for (y in y0...y1) for (x in x0...x1) {
             var i = y * width + x;
             nearCollider[i] = true;
-            if (cells[i] && contains(left + (x + 0.5) * step, top + (y + 0.5) * step))
-                cells[i] = false;
+            if (contains(left + (x + 0.5) * step, top + (y + 0.5) * step)) {
+                if (markingHazard) hazards[i] = true;
+                else cells[i] = false;
+            }
         }
     }
 
     public function clear():Void {
+        field = null;
+        knownLines = [];
+        routeLine = [];
+        hazards = [];
+        shapeKey = "";
         edgeChecks = new Map();
         invalidateRoute();
         cells = [];
@@ -175,7 +257,7 @@ class WalkGrid {
     }
 
     public function roomAtCell(cell:Int):Tile {
-        return cell < 0 ? null : rooms[cell];
+        return cell < 0 || cell >= cells.length ? null : rooms[cell];
     }
 
     function index(x:Int, y:Int):Int {
@@ -183,7 +265,7 @@ class WalkGrid {
     }
 
     function walkable(i:Int):Bool {
-        return i >= 0 && cells[i];
+        return i >= 0 && i < cells.length && cells[i];
     }
 
     function blocksMovement(fixture:B2Fixture, ignoredGate:UInt = 0):Bool {
@@ -193,7 +275,13 @@ class WalkGrid {
         if (ignoredGate != 0 && data == ignoredGate) return false;
         var npc = data == null || floor.remoteActors == null ? null
             : Std.downcast(floor.remoteActors.itemFor(data), NPCGameObject);
-        if (npc != null && npc.gmNpc != null && npc.gmNpc.Species != "DOOR"
+        // A closed, authored door is still a route passage. Its surrounding
+        // wall fixtures remain blockers; only the door actor is traversable in
+        // this guidance cache, so it can lead to an unlockable exit.
+        if (npc != null && npc.gmNpc != null && npc.gmNpc.Species == "DOOR") return false;
+        if (npc != null && npc.isProp && npc.gmNpc != null && npc.gmNpc.IsAttackable
+            && npc.gmNpc.Species != "TRAP") return false;
+        if (npc != null && npc.gmNpc != null && npc.gmNpc.Species == "TRAP"
             && npc.team == DBGlobal.TEAM_3) return false;
         if (npc != null && npc.gmNpc != null && npc.gmNpc.Species == "TRAP") {
             var kind = Std.string(npc.gmNpc.Constant).toUpperCase();
@@ -204,19 +292,26 @@ class WalkGrid {
             || (npc != null && npc.isProp && !npc.isNavigable && bits != DBGlobal.B2D_COMBAT_MASK);
     }
 
-    public function canAim(x:Float, y:Float, target:Point, ignoredGate:UInt = 0):Bool {
-        if (floor == null || floor.box2DWorld == null) return false;
-        if (x == target.x && y == target.y) return false;
+    public function canAim(x:Float, y:Float, target:Point, ignoredGate:UInt = 0, smallObstacle:Bool = false):Bool {
+        if (floor == null || floor.box2DWorld == null || target == null
+            || !Math.isFinite(x) || !Math.isFinite(y)
+            || !Math.isFinite(target.x) || !Math.isFinite(target.y)) return false;
+        if (x == target.x && y == target.y) return true;
         var from = new B2Vec2(x / 50, y / 50);
         var to = new B2Vec2(target.x / 50, target.y / 50);
         for (hit in floor.box2DWorld.RayCastAll(from, to)) {
             var fixture = Std.downcast(hit, B2Fixture);
-            if (fixture != null && blocksMovement(fixture, ignoredGate)) return false;
+            if (fixture == null || !blocksMovement(fixture, ignoredGate)) continue;
+            var circle = Std.downcast(fixture.GetShape(), B2CircleShape);
+            if (!smallObstacle || circle == null || circle.GetRadius() * 50 > 55) return false;
         }
         return true;
     }
 
     function canCross(from:Int, to:Int):Bool {
+        if (!walkable(from) || !walkable(to)
+            || Math.abs(from % width - to % width)
+                + Math.abs(Std.int(from / width) - Std.int(to / width)) != 1) return false;
         var a = rooms[from];
         var b = rooms[to];
         if (a == null || b == null) return false;
@@ -225,6 +320,7 @@ class WalkGrid {
         var key = lower * 2 + (Math.abs(from - to) == 1 ? 0 : 1);
         var cached = edgeChecks.get(key);
         if (cached != null) return cached;
+        if (cachedQueries) return false;
         // Authored exit flags are incomplete on some floors. Confirm the seam in the live world.
         var start = point(from);
         var end = point(to);
@@ -237,230 +333,270 @@ class WalkGrid {
         return new Point(left + (i % width + 0.5) * step, top + (Std.int(i / width) + 0.5) * step);
     }
 
-    public function invalidateRoute():Void {
-        cachedRoute = [];
+    public function regionAt(x:Float, y:Float):String {
+        var tile = roomAtCell(cellAt(x, y));
+        if (tile == null) return "";
+        return tile.x + ":" + tile.y + ":" + Math.floor((x - tile.x) / 150)
+            + ":" + Math.floor((y - tile.y) / 150);
     }
 
-    public function waypoint(x:Float, y:Float, goal:Tile, gate:Point, gateId:UInt = 0):Point {
-        var start = cellAt(x, y);
-        if (start < 0 || rooms[start] == null) return null;
-        var heroCell = start;
-        if (!walkable(start)) {
-            var snapped = -1;
-            var distance = Math.POSITIVE_INFINITY;
-            for (dy in -1...2) for (dx in -1...2) {
-                var i = index(start % width + dx, Std.int(start / width) + dy);
-                if (!walkable(i) || rooms[i] != rooms[start]) continue;
-                var p = point(i);
-                if (!canAim(x, y, p)) continue;
-                var d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
-                if (d < distance) {
-                    snapped = i;
-                    distance = d;
+    public function prepareField(goal:Tile, gate:Point, gateId:UInt):Void {
+        var key = goal.id + ":" + goal.x + ":" + goal.y + ":" + gateId
+            + (gate == null ? "" : ":" + gate.x + ":" + gate.y);
+        if (field != null && field.key == key) return;
+        routeLine = [];
+        anchorRoutes = new Map(); anchorTiles = [for(tile in tilesByPosition) tile]; anchorCursor=0;focusAnnounced=false;anchorsOrdered=false;
+        field = new RouteField(goal, gate, gateId, key, cells.length);
+        routeGoal = key; routeGateId = gateId;
+    }
+
+    /** One reverse search fills the next step for every reachable cell. */
+    public function prioritize(x:Float,y:Float):Void { focusCell=cellAt(x,y); }
+
+    public function advanceField():Bool {
+        if (field == null) return false;
+        if (field.phase == 2) {
+            if(!anchorsOrdered){
+                anchorsOrdered=true;
+                var priority:Array<Tile>=[];var current=focusCell;var guard=0;
+                while(current>=0&&current<cells.length&&field.next[current]>=0&&guard++<cells.length){
+                    var tile=rooms[current];if(tile!=null&&priority.indexOf(tile)<0)priority.push(tile);
+                    if(priority.length>=3||field.next[current]==current)break;current=field.next[current];
                 }
+                for(tile in anchorTiles)if(priority.indexOf(tile)<0)priority.push(tile);
+                anchorTiles=priority;
             }
-            if (snapped < 0) return null;
-            start = snapped;
-        }
-
-        var inside = goal.contains(x, y);
-        if (inside == cachedInside && cachedRoute.length > 0) {
-            var at = cachedRoute.indexOf(start);
-            if (at > 0) {
-                var ahead = cachedRoute.slice(0, at);
-                var next = nextWaypoint(x, y, start, ahead);
-                if (next != null) {
-                    cachedRoute = ahead;
-                    cachedRoute.push(start);
-                    return next;
+            var deadline=haxe.Timer.stamp()+0.001;var count=0;
+            while(anchorCursor<anchorTiles.length*36 && count++<8 && haxe.Timer.stamp()<deadline) {
+                var tile=anchorTiles[Std.int(anchorCursor/36)];var part=anchorCursor%36;anchorCursor++;
+                var x=tile.x+(part%6+0.5)*150;var y=tile.y+(Std.int(part/6)+0.5)*150;
+                var cell=cellAt(x,y);var best=-1;var distance=Math.POSITIVE_INFINITY;
+                if(cell>=0)for(dy in -2...3)for(dx in -2...3){
+                    var candidate=index(cell%width+dx,Std.int(cell/width)+dy);
+                    if(!walkable(candidate)||!field.settled[candidate]||rooms[candidate]!=tile)continue;
+                    var p=point(candidate);var d=(p.x-x)*(p.x-x)+(p.y-y)*(p.y-y);
+                    if(d<distance){distance=d;best=candidate;}
                 }
+                var route=best<0?[]:cachedLine(best,point(best));
+                var key=tileKey(tile.x,tile.y);var routes=anchorRoutes.get(key);
+                if(routes==null){routes=[];anchorRoutes.set(key,routes);}routes.push(route);
             }
+            return false;
         }
-
-        var target = gate == null ? -1 : cellAt(gate.x, gate.y);
-        var parent:Array<Int> = [for (i in 0...cells.length) -1];
-        parent[start] = start;
-        var queue = [start];
-        var head = 0;
-        var best = -1;
-        var bestDistance = Math.POSITIVE_INFINITY;
-
-        while (head < queue.length) {
-            var current = queue[head++];
-            var col = current % width;
-            var row = Std.int(current / width);
-            var px = left + (col + 0.5) * step;
-            var py = top + (row + 0.5) * step;
-
-            if (goal.contains(px, py)) {
-                if (!inside || current == target) {
-                    best = current;
-                    break;
+        var f = field;
+        var deadline = haxe.Timer.stamp() + (focusCell>=0 && focusCell<f.settled.length && !f.settled[focusCell] ? 0.003 : 0.001);
+        var work = 0;
+        while (work++ < 1536 && haxe.Timer.stamp() < deadline) {
+            if (f.phase == 0) {
+                var side = Math.round(Tile.SIZE / step);
+                if (f.scan < side * side) {
+                    var offset = f.scan++;
+                    var cell = index(Math.round((f.goal.x-left)/step) + offset%side,
+                        Math.round((f.goal.y-top)/step) + Std.int(offset/side));
+                    if (!walkable(cell)) continue;
+                    var p = point(cell);
+                    if (!f.goal.contains(p.x, p.y)) continue;
+                    var end = f.gate == null ? new Point(f.goal.x + Tile.SIZE/2, f.goal.y + Tile.SIZE/2) : f.gate;
+                    var dx = p.x-end.x;var dy=p.y-end.y;var distance=dx*dx+dy*dy;
+                    if (f.gate != null && canAim(p.x,p.y,f.gate,f.gateId) && hazardFree(p.x,p.y,f.gate)) {
+                        // Closed gates can split the nearest cells into separate
+                        // islands. Cache every visible approach, on either side.
+                        f.seeds.push(cell);
+                        f.scores[cell]=Math.sqrt(distance)/step;
+                        f.next[cell]=cell;
+                    }
+                    if (distance < f.distance && (f.gate == null || canAim(p.x,p.y,f.gate,f.gateId))) {
+                        f.seed=cell;f.distance=distance;
+                    }
+                    continue;
                 }
-                var gx = gate == null ? goal.x + Tile.SIZE / 2 : gate.x;
-                var gy = gate == null ? goal.y + Tile.SIZE / 2 : gate.y;
-                var d = (gx - px) * (gx - px) + (gy - py) * (gy - py);
-                if (d < bestDistance) {
-                    best = current;
-                    bestDistance = d;
+                if (f.seed < 0) { f.phase=2; return true; }
+                if (f.seeds.length == 0) {
+                    f.scores[f.seed]=0; f.next[f.seed]=f.seed; f.seeds.push(f.seed);
                 }
+                for (seed in f.seeds) fieldPush(f.heap,new RouteNode(seed,f.scores[seed]));
+                f.phase=1;
             }
-
-            for (dir in 0...4) {
-                var next = switch (dir) {
-                    case Tile.UP: index(col, row - 1);
-                    case Tile.RIGHT: index(col + 1, row);
-                    case Tile.DOWN: index(col, row + 1);
-                    default: index(col - 1, row);
-                };
-                if (!walkable(next) || parent[next] != -1 || !canCross(current, next)) continue;
-                if (current == start && !canAim(x, y, point(next))) continue;
-                parent[next] = current;
-                queue.push(next);
+            if (f.heap.length==0) { f.phase=2; return true; }
+            var current=heapPop(f.heap,f.scores);
+            if (f.settled[current]) continue;
+            f.settled[current]=true;
+            var col=current%width;var row=Std.int(current/width);
+            for (next in [index(col-1,row),index(col+1,row),index(col,row-1),index(col,row+1)]) {
+                if (!walkable(next) || f.settled[next] || !canCross(current,next)) continue;
+                var score=f.scores[current]+1+(hazards[current]?24:0)+3./(clearance[current]+1);
+                if(score>=f.scores[next])continue;
+                f.scores[next]=score;f.next[next]=current;
+                // Reverse Dijkstra uses immutable costs, with no per-hero search.
+                fieldPush(f.heap,new RouteNode(next,score));
+            }
+            if(!focusAnnounced&&current==focusCell){
+                focusAnnounced=true;
+                routeLine=cachedLine(current,point(current),true);
+                // Publish the main spawn-to-gate line immediately, before
+                // warming all 36 starts in the first three tiles and beyond.
+                return true;
             }
         }
+        return false;
+    }
 
-        if (best < 0 && !inside) {
-            // A closed gate can disconnect the exit. Guide the hero as far as
-            // the reachable approach to the next authored doorway.
-            best = reachableApproach(goal, queue);
+    public function waypoint(x:Float,y:Float,goal:Tile,gate:Point,gateId:UInt=0):Point {
+        prepareField(goal,gate,gateId);
+        // Keep a valid branch stable instead of swapping nearby anchors on
+        // every small movement or as additional anchors finish warming.
+        var existing=followLine(x,y);
+        if(existing!=null)return existing;
+        var tile=roomAtCell(cellAt(x,y));
+        var routes=tile==null?null:anchorRoutes.get(tileKey(tile.x,tile.y));
+        var chosen:Array<Point>=null;var closest=Math.POSITIVE_INFINITY;
+        cachedQueries=true;
+        if(routes!=null)for(line in routes)for(i in 0...line.length-1){
+            var a=line[i];var b=line[i+1];var dx=b.x-a.x;var dy=b.y-a.y;
+            var length=dx*dx+dy*dy;
+            var t=length==0?0.:Math.max(0,Math.min(1,((x-a.x)*dx+(y-a.y)*dy)/length));
+            var p=new Point(a.x+dx*t,a.y+dy*t);var distance=(p.x-x)*(p.x-x)+(p.y-y)*(p.y-y);
+            if(distance<closest && clearGridLine(x,y,p)){closest=distance;chosen=line;}
         }
-        if (best < 0) return null;
-        if (best == start) {
-            if (heroCell != start) return point(start);
-            if (inside && gate != null && (target == start || bestDistance <= 4 * step * step)
-                && canAim(x, y, gate, gateId)) return gate;
-            return null;
+        cachedQueries=false;
+        if(chosen!=null)routeLine=chosen;
+        var retained=followLine(x,y);if(retained!=null)return retained;
+        var start=cellAt(x,y);
+        if(start<0||field==null||!field.settled[start]||field.next[start]<0)return null;
+        // Initial guidance uses the already-built field while anchor lines fill.
+        routeLine=cachedLine(start,new Point(x,y));
+        return followLine(x,y);
+    }
+
+    function cachedLine(start:Int,origin:Point,validateInitial:Bool=false):Array<Point> {
+        var raw=[origin];var current=start;var guard=0;
+        while(guard++<cells.length){
+            raw.push(point(current));
+            if(field.next[current]==current)break;
+            var next=field.next[current];if(next<0)return [];current=next;
         }
-        var route = [];
-        var next = best;
-        while (next != start) {
-            route.push(next);
-            next = parent[next];
+        if(field.gate!=null)raw.push(field.gate);
+        cachedQueries=!validateInitial;var line=naturalLine(raw,field.gateId);cachedQueries=false;
+        return line;
+    }
+
+    public function invalidateRoute():Void {
+        gentleTarget = null;
+        gentleOrigin = null;
+    }
+
+    function hazardFree(x:Float, y:Float, target:Point):Bool {
+        var count = Std.int(Math.ceil(Point.distance(new Point(x, y), target) / (step / 2)));
+        for (i in 0...count + 1) {
+            var t = count == 0 ? 0. : i / count;
+            var cell = cellAt(x + (target.x - x) * t, y + (target.y - y) * t);
+            if (cell >= 0 && hazards[cell]) return false;
         }
-        cachedRoute = route.copy();
-        cachedRoute.push(start);
-        cachedInside = inside;
-        if (heroCell != start) return point(start);
-        return nextWaypoint(x, y, start, route);
+        return true;
+    }
+
+    function naturalLine(raw:Array<Point>, gateId:UInt):Array<Point> {
+        var result = [raw[0]];
+        var at = 0;
+        while (at < raw.length - 1) {
+            var next = at + 1;
+            for (offset in 0...raw.length - at - 2) {
+                var i = raw.length - 1 - offset;
+                if (corridorClear(raw[at].x, raw[at].y, raw[i], i == raw.length - 1 ? gateId : 0) && hazardFree(raw[at].x, raw[at].y, raw[i])) { next = i; break; }
+            }
+            result.push(raw[next]);
+            at = next;
+        }
+        return roundCorners(result);
+    }
+
+    function roundCorners(points:Array<Point>):Array<Point> {
+        if (points.length < 3) return points;
+        var rounded = [points[0]];
+        for (i in 1...points.length - 1) {
+            var a = points[i - 1]; var b = points[i]; var c = points[i + 1];
+            var ab = Point.distance(a, b); var bc = Point.distance(b, c);
+            var radius = Math.min(140., Math.min(ab, bc) * 0.4);
+            var accepted=false;
+            for(attempt in 0...5){
+                if(radius<2)break;
+                var enter=new Point(b.x+(a.x-b.x)*radius/ab,b.y+(a.y-b.y)*radius/ab);
+                var leave=new Point(b.x+(c.x-b.x)*radius/bc,b.y+(c.y-b.y)*radius/bc);
+                var arc=[enter];
+                for(j in 1...13){var t=j/12.;var u=1-t;arc.push(new Point(u*u*enter.x+2*u*t*b.x+t*t*leave.x,u*u*enter.y+2*u*t*b.y+t*t*leave.y));}
+                var safe=true;var from=rounded[rounded.length-1];
+                for(p in arc){if(!corridorClear(from.x,from.y,p)||!hazardFree(from.x,from.y,p))safe=false;from=p;}
+                if(safe){for(p in arc)rounded.push(p);accepted=true;break;}
+                radius*=0.5;
+            }
+            if(!accepted)rounded.push(b);
+        }
+        rounded.push(points[points.length - 1]);
+        return rounded;
+    }
+
+    function followLine(x:Float, y:Float):Point {
+        if (routeLine.length < 2) return null;
+        var best = Math.POSITIVE_INFINITY;
+        var segment = -1;
+        var projection:Point = null;
+        for (i in 0...routeLine.length - 1) {
+            var a = routeLine[i]; var b = routeLine[i + 1];
+            var dx = b.x - a.x; var dy = b.y - a.y;
+            var length = dx * dx + dy * dy;
+            var t = length == 0 ? 0. : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / length));
+            var p = new Point(a.x + dx * t, a.y + dy * t);
+            var distance = Point.distance(new Point(x, y), p);
+            if (distance < best) { best = distance; segment = i; projection = p; }
+        }
+        if (segment < 0 || best > 95) return null;
+        var remaining = 192.;
+        var from = projection;
+        var target = routeLine[segment + 1];
+        for (i in segment + 1...routeLine.length) {
+            var p = routeLine[i];
+            var distance = Point.distance(from, p);
+            if(distance>0.001)routeDirection=new Point((p.x-from.x)/distance*100,(p.y-from.y)/distance*100);
+            if (distance >= remaining) {
+                target = new Point(from.x + (p.x - from.x) * remaining / distance, from.y + (p.y - from.y) * remaining / distance);
+                break;
+            }
+            target = p; remaining -= distance; from = p;
+        }
+        var ignoredGate = segment == routeLine.length - 2 ? routeGateId : 0;
+        if (!clearGridLine(x,y,target)) target=routeLine[segment+1];
+        if (!clearGridLine(x,y,target) && segment!=routeLine.length-2) return null;
+        return target;
+    }
+
+    static function fieldPush(heap:Array<RouteNode>,node:RouteNode):Void {
+        heap.push(node);var i=heap.length-1;
+        while(i>0){var parent=Std.int((i-1)/2);if(heap[parent].cost<=node.cost)break;heap[i]=heap[parent];i=parent;}
+        heap[i]=node;
+    }
+
+    static function heapPop(heap:Array<RouteNode>, scores:Array<Float>):Int {
+        var result = heap[0].cell; var last = heap.pop();
+        if (heap.length == 0) return result;
+        var i = 0;
+        while (i * 2 + 1 < heap.length) {
+            var child = i * 2 + 1;
+            if (child + 1 < heap.length && heap[child + 1].cost < heap[child].cost) child++;
+            if (last.cost <= heap[child].cost) break;
+            heap[i] = heap[child]; i = child;
+        }
+        heap[i] = last;
+        return result;
     }
 
     static function tileKey(x:Int, y:Int):String {
         return x + ":" + y;
     }
 
-    function reachableApproach(goal:Tile, reachable:Array<Int>):Int {
-        var distances:Map<String, Int> = new Map();
-        var openings:Map<String, Point> = new Map();
-        var queue = [goal];
-        distances.set(tileKey(goal.x, goal.y), 0);
-        var head = 0;
-        while (head < queue.length) {
-            var room = queue[head++];
-            var distance = distances.get(tileKey(room.x, room.y));
-            for (side in 0...4) {
-                if (!room.exits[side]) continue;
-                var dx = side == Tile.RIGHT ? Tile.SIZE : side == Tile.LEFT ? -Tile.SIZE : 0;
-                var dy = side == Tile.DOWN ? Tile.SIZE : side == Tile.UP ? -Tile.SIZE : 0;
-                var key = tileKey(room.x + dx, room.y + dy);
-                var neighbor = tilesByPosition.get(key);
-                if (neighbor == null || distances.exists(key) || !neighbor.exits[(side + 2) % 4]) continue;
-                distances.set(key, distance + 1);
-                openings.set(key, new Point(neighbor.x + (Tile.SIZE - dx) / 2,
-                    neighbor.y + (Tile.SIZE - dy) / 2));
-                queue.push(neighbor);
-            }
-        }
-
-        var best = -1;
-        var bestRoomDistance = 0x7FFFFFFF;
-        var bestDoorDistance = Math.POSITIVE_INFINITY;
-        var lastRoom:Tile = null;
-        var roomDistance = 0x7FFFFFFF;
-        var doorway:Point = null;
-        for (cell in reachable) {
-            var room = rooms[cell];
-            if (room != lastRoom) {
-                lastRoom = room;
-                var key = tileKey(room.x, room.y);
-                doorway = openings.get(key);
-                if (doorway != null) roomDistance = distances.get(key);
-            }
-            if (doorway == null || roomDistance > bestRoomDistance) continue;
-            var p = point(cell);
-            var dx = p.x - doorway.x;
-            var dy = p.y - doorway.y;
-            var distance = dx * dx + dy * dy;
-            if (roomDistance < bestRoomDistance || distance < bestDoorDistance) {
-                best = cell;
-                bestRoomDistance = roomDistance;
-                bestDoorDistance = distance;
-            }
-        }
-        return best;
-    }
-
     public function isGentleDirection(x:Float, y:Float, target:Point):Bool {
         return target == gentleTarget && gentleOrigin != null
-            && Math.abs(x - gentleOrigin.x) < step && Math.abs(y - gentleOrigin.y) < step;
-    }
-
-    function smallDetour(x:Float, y:Float, start:Int, route:Array<Int>, targetIndex:Int):Bool {
-        var target = point(route[targetIndex]);
-        var dx = target.x - x;
-        var dy = target.y - y;
-        var directDistance = Math.sqrt(dx * dx + dy * dy);
-        if (directDistance < 1) return false;
-        var distance = 0.;
-        var previous = new Point(x, y);
-        for (i in 0...route.length - targetIndex) {
-            var cell = route[route.length - 1 - i];
-            // Relax only a local obstacle within one room, preserving doorways.
-            if (rooms[cell] != rooms[start]) return false;
-            var p = point(cell);
-            if (Math.abs((p.x - x) * dy - (p.y - y) * dx) / directDistance > 55) return false;
-            distance += Point.distance(previous, p);
-            previous = p;
-        }
-        return distance - directDistance <= 90;
-    }
-
-    function nextWaypoint(x:Float, y:Float, start:Int, route:Array<Int>):Point {
-        gentleTarget = null;
-        gentleOrigin = null;
-        // Look as far as the first doorway so equal-length grid routes do not
-        // send the player sideways before a reachable doorway.
-        var room = rooms[start];
-        var farthest = route.length - 1;
-        while (farthest > 0 && rooms[route[farthest]] == room) farthest--;
-
-        var crossing = point(route[farthest]);
-        var dx = crossing.x - x;
-        var dy = crossing.y - y;
-        if (rooms[route[farthest]] != room && dx * dx + dy * dy <= 150 * 150) {
-            var nextRoom = rooms[route[farthest]];
-            var nextDoor = farthest;
-            while (nextDoor > 0 && rooms[route[nextDoor]] == nextRoom) nextDoor--;
-            var direct = point(route[nextDoor]);
-            if (clearGridLine(x, y, direct) && canAim(x, y, direct)) return direct;
-
-            var lookahead = Math.max(0, farthest - 6);
-            while (farthest > lookahead && rooms[route[farthest - 1]] == nextRoom) farthest--;
-        }
-
-        for (i in farthest...route.length - 1) {
-            var candidate = point(route[i]);
-            if (clearGridLine(x, y, candidate) && canAim(x, y, candidate)) return candidate;
-            if (smallDetour(x, y, start, route, i)) {
-                gentleTarget = candidate;
-                gentleOrigin = new Point(x, y);
-                return candidate;
-            }
-        }
-        // The first edge already follows adjacent walkable cells. A conservative
-        // diagonal grid sample can fail near a cell corner, so check the actual step.
-        var first = point(route[route.length - 1]);
-        return canAim(x, y, first) ? first : null;
+            && Math.abs(x - gentleOrigin.x) < step && Math.abs(y - gentleOrigin.y) < step
+            && canAim(x, y, target, 0, true);
     }
 
     function clearGridLine(x:Float, y:Float, target:Point):Bool {

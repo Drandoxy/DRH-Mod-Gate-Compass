@@ -1,284 +1,351 @@
 package mods.gate_compass;
 
+import actor.ActorView;
 import mods.api.Context;
-import openfl.display.Bitmap;
 import openfl.display.BitmapData;
+import openfl.geom.Matrix;
+import starling.display.Image;
+import starling.display.Quad;
+import starling.textures.Texture;
+import starling.events.Event;
+import starling.styles.MeshStyle;
 import openfl.display.Sprite;
-import openfl.events.Event;
-import openfl.events.MouseEvent;
-import openfl.filters.ColorMatrixFilter;
-import openfl.filters.DropShadowFilter;
-import openfl.geom.Point;
 import openfl.text.Font;
 import openfl.text.TextField;
 import openfl.text.TextFieldAutoSize;
 import openfl.text.TextFormat;
 
-class Compass extends Sprite {
-    static inline final SIZE = 88.;
+/** Native world marker between scenery and actor layers, using public host access. */
+class Compass extends starling.display.Sprite {
     var ctx:Context;
-    var layoutFile:String;
+    var displayMode = "ground_line";
+    var owner:ActorView;
+    var routeVisual = new starling.display.Sprite();
+    var routeBatches:Array<RouteBatch> = [];
+    var lastVisibilityX = Math.POSITIVE_INFINITY;
+    var lastVisibilityY = Math.POSITIVE_INFINITY;
+    var shownRoute:Array<openfl.geom.Point>;
+    var displayRoute:Array<openfl.geom.Point> = [];
+    // Fit to the visible white stroke decoded from db_fx_player_ring's ATF,
+    // excluding transparent atlas padding. HeroOwnerView applies scale 0.75.
+    static inline final FLATTEN = 0.6264075354;
+    static inline final RING_X = -0.41416017;
+    static inline final RING_Y = -4.36789838;
+    static inline final RING_ROTATION = -0.000567615;
+    var mount = new starling.display.Sprite();
+    var backdrop:brain.starling.StarlingLayer;
+    var textures:Array<Texture> = [];
+    var bitmaps:Array<BitmapData> = [];
+    var groundRing = new starling.display.Sprite();
+    var orbit = new starling.display.Sprite();
+    var groundNeedle:Image;
+    var groundBoss:Image;
+    var groundGuide:Quad;
+    var ring = new Sprite();
     var needle = new Sprite();
-    var grip = new Sprite();
     var boss = new Sprite();
-    var bossLines:Array<TextField> = [];
-    var arrowArt:BitmapData;
-    var bossFontChecked = false;
-    var heading:Float = 0;
+    var heading = 0.;
     var hasHeading = false;
     var lastTurn = 0;
-    var dragKind = 0;
-    var startX:Float;
-    var startY:Float;
-    var startLeft:Float;
-    var startTop:Float;
-    var startScale:Float;
+    var directionX = 0.;
+    var directionY = 0.;
+    var size = 1.;
+    static inline final RADIUS = 76.;
+    static inline final COLOR = 0x88E9E7;
 
     public function new(context:Context) {
         super();
         ctx = context;
-        layoutFile = ctx.data + "/compass-layout.json";
         visible = false;
-        buttonMode = true;
-
-        graphics.lineStyle(2, 0x89602E);
-        graphics.beginFill(0x251A13, 0.93);
-        graphics.drawCircle(44, 44, 42);
-        graphics.endFill();
-        graphics.lineStyle(1, 0xC39856, 0.8);
-        graphics.drawCircle(44, 44, 37);
-        for (i in 0...8) {
-            var a = i * Math.PI / 4;
-            graphics.moveTo(44 + Math.cos(a) * 31, 44 + Math.sin(a) * 31);
-            graphics.lineTo(44 + Math.cos(a) * 36, 44 + Math.sin(a) * 36);
+        touchable = false;
+        mount.touchable = false;
+        // Static concentric strokes give a soft cyan halo and white core;
+        // no per-frame blur filter or texture upload is needed.
+        for (stroke in [20., 15., 10., 6.]) {
+            ring.graphics.lineStyle(stroke * 0.7, COLOR, stroke == 20 ? 0.08 : stroke == 15 ? 0.15 : stroke == 10 ? 0.32 : 0.8);
+            ring.graphics.drawCircle(0, 0, RADIUS * 0.78);
         }
-        needle.x = 44;
-        needle.y = 44;
-        needle.mouseEnabled = false;
-        needle.mouseChildren = false;
-        drawNeedle();
-        addChild(needle);
+        ring.graphics.lineStyle(3.15, 0xF2FFFF, 1);
+        ring.graphics.drawCircle(0, 0, RADIUS * 0.78);
+        // The cyan base sits outside the ring's core, with a matching halo.
+        for (stroke in [12., 8., 4.]) {
+            needle.graphics.lineStyle(stroke, COLOR, stroke == 12 ? 0.08 : stroke == 8 ? 0.2 : 0.5);
+            needle.graphics.moveTo(RADIUS + 39, 0);
+            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -15.2);
+            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 15.2);
+            needle.graphics.lineTo(RADIUS + 39, 0);
+        }
+        needle.graphics.lineStyle(0, COLOR, 0);
+        needle.graphics.beginFill(COLOR, 0.95);
+        needle.graphics.moveTo(RADIUS + 39, 0);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -15.2);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 15.2);
+        needle.graphics.lineTo(RADIUS + 39, 0);
+        needle.graphics.endFill();
+        needle.graphics.beginFill(0xF2FFFF, 1);
+        needle.graphics.moveTo(RADIUS + 33, 0);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, -8.5);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, 8.5);
+        needle.graphics.lineTo(RADIUS + 33, 0);
+        needle.graphics.endFill();
+        addChildAt(routeVisual, 0);
+        mount.addChild(this);
+        mount.addEventListener(Event.ENTER_FRAME, syncCamera);
+    }
 
-        boss.mouseEnabled = false;
-        boss.mouseChildren = false;
+    function buildVisuals():Void {
+        var face = "_sans";
+        for (font in Font.enumerateFonts(false)) {
+            var name = font.fontName.toLowerCase();
+            if (name.indexOf("fat rhino") >= 0 || name.indexOf("fatrhino") >= 0) { face = font.fontName; break; }
+        }
+        var y = -27.;
         for (word in ["Defeat", "the", "boss"]) {
             var line = new TextField();
             line.autoSize = TextFieldAutoSize.LEFT;
             line.selectable = false;
-            line.defaultTextFormat = bossFormat("_sans");
+            line.embedFonts = face != "_sans";
+            line.defaultTextFormat = new TextFormat(face, 15, 0xFF6850, true);
             line.text = word;
+            line.x = -line.width / 2;
+            line.y = y;
+            y += line.textHeight + 1;
             boss.addChild(line);
-            bossLines.push(line);
         }
-        layoutBossText();
-        boss.filters = [new DropShadowFilter(1, 90, 0x391511, 1, 2, 2, 2)];
-        boss.visible = false;
-        addChild(boss);
-
-        grip.graphics.beginFill(0, 0);
-        grip.graphics.drawRect(0, 0, 19, 19);
-        grip.graphics.endFill();
-        grip.graphics.lineStyle(1.5, 0xD3AB69);
-        grip.graphics.moveTo(3, 16);
-        grip.graphics.lineTo(16, 3);
-        grip.graphics.moveTo(9, 16);
-        grip.graphics.lineTo(16, 9);
-        grip.x = grip.y = 69;
-        grip.buttonMode = true;
-        addChild(grip);
-        addEventListener(MouseEvent.MOUSE_DOWN, startDragGesture);
-        addEventListener(Event.ADDED_TO_STAGE, added);
-        loadLayout();
+        // Draw the stroke separately from its radius so width can change
+        // without fading it or shrinking the ring. Preserve the artwork's
+        // visible-radius allowance and the established center/perspective.
+        var ringImage=baked(ring,208,208,104,104);
+        ringImage.pivotX=ringImage.pivotY=104;
+        ringImage.scaleX=1.45;ringImage.scaleY=FLATTEN*1.45;
+        ringImage.x=0;ringImage.y=0;
+        ringImage.alpha=1;
+        groundRing.addChild(ringImage);
+        groundNeedle = baked(needle, 272, 272, 136, 136);
+        groundNeedle.pivotX = groundNeedle.pivotY = 136;
+        groundNeedle.rotation=heading;
+        orbit.addChild(groundNeedle);
+        groundRing.addChild(orbit);
+        groundGuide = new Quad(1, 2, COLOR);
+        groundGuide.pivotY = 1;
+        groundGuide.alpha = 0.35;
+        addChild(groundGuide);
+        addChild(groundRing);
+        groundBoss = baked(boss, 120, 90, 60, 30);
+        groundBoss.pivotX = 60;
+        groundBoss.y = 65;
+        groundBoss.visible = false;
+        addChild(groundBoss);
+        setSize(size);
+        setDisplayMode(displayMode);
     }
 
-    function drawNeedle():Void {
-        try {
-            var folder = haxe.io.Path.directory(Sys.programPath());
-            var path = folder + "/Resources/Glyphs/Others/Arrows/Directional_Arrow_Straight.png";
-            arrowArt = BitmapData.fromFile(path);
-        } catch (_:Dynamic) {}
-        if (arrowArt != null) {
-            var arrow = new Bitmap(arrowArt, "auto", true);
-            arrow.width = 54;
-            arrow.height = 54 * arrowArt.height / arrowArt.width;
-            arrow.x = -arrow.width / 2;
-            arrow.y = -arrow.height / 2;
-            arrow.filters = [new ColorMatrixFilter([
-                1, 0, 0, 0, 18,
-                0.75, 0, 0, 0, 10,
-                0.28, 0, 0, 0, 0,
-                0, 0, 0, 1, 0
-            ])];
-            needle.addChild(arrow);
-            return;
+    function baked(source:Sprite, width:Int, height:Int, offsetX:Float, offsetY:Float):Image {
+        var bitmap = new BitmapData(width, height, true, 0);
+        bitmap.draw(source, new Matrix(1, 0, 0, 1, offsetX, offsetY));
+        var texture = Texture.fromBitmapData(bitmap, false);
+        bitmaps.push(bitmap);
+        textures.push(texture);
+        var image = new Image(texture);
+        // Keep mod-owned textures out of the game's multi-atlas animation
+        // batches, without altering the host's global style or game textures.
+        image.setStyle(new MeshStyle());
+        image.alpha = 1;
+        return image;
+    }
+
+    public function attach(view:ActorView):Void {
+        if (owner == view && mount.parent != null && (groundNeedle != null || !wantsGround())) return;
+        owner = view;
+        var facade = ctx.core.facade;
+        var manager = facade == null ? null : facade.starlingLayerManager;
+        var background = manager == null ? null : manager.getLayer(10);
+        var actors = manager == null ? null : manager.getLayer(20);
+        if (background == null || actors == null || actors.parent == null) return;
+        if (groundNeedle == null && wantsGround()) buildVisuals();
+        backdrop = background;
+        if (mount.parent != actors.parent)
+            actors.parent.addChildAt(mount, actors.parent.getChildIndex(actors));
+        syncCamera(null);
+    }
+
+    function syncCamera(event:Event):Void {
+        if (backdrop != null) mount.transformationMatrix = backdrop.transformationMatrix;
+        if (owner != null && owner.root != null) {
+            setWorldPosition(owner.root.x, owner.root.y);
+            // The vanilla foot ring belongs to the animated body, not directly
+            // to the actor root. Follow that same public transform chain.
+            if (owner.body != null) {
+                var center=owner.root.globalToLocal(owner.body.localToGlobal(new openfl.geom.Point(RING_X,RING_Y)));
+                groundRing.x=center.x; groundRing.y=center.y;
+            }
         }
-        var pen = needle.graphics;
-        pen.lineStyle(2, 0x754618);
-        pen.beginFill(0xF3B743);
-        pen.moveTo(29, 0);
-        pen.lineTo(5, -15);
-        pen.lineTo(5, -6);
-        pen.lineTo(-25, -6);
-        pen.lineTo(-25, 6);
-        pen.lineTo(5, 6);
-        pen.lineTo(5, 15);
-        pen.lineTo(29, 0);
-        pen.endFill();
+    }
+
+    public function setWorldPosition(worldX:Float, worldY:Float):Void {
+        x = worldX;
+        y = worldY;
+        routeVisual.x = -worldX;
+        routeVisual.y = -worldY;
+        if (Math.abs(worldX - lastVisibilityX) + Math.abs(worldY - lastVisibilityY) < 16) return;
+        lastVisibilityX = worldX; lastVisibilityY = worldY;
+        if (routeVisual.visible && displayRoute.length > 1 && routeBatches.length > 0) {
+            var nearest = -1; var best = Math.POSITIVE_INFINITY;var nearestT=0.;
+            var count = displayRoute.length - 1;
+            for (i in 0...count) {
+                var a = displayRoute[i]; var b = displayRoute[i + 1];
+                var dx = b.x - a.x; var dy = b.y - a.y;
+                var length = dx * dx + dy * dy;
+                var t = length == 0 ? 0. : Math.max(0, Math.min(1, ((worldX - a.x) * dx + (worldY - a.y) * dy) / length));
+                var ex = a.x + dx * t - worldX; var ey = a.y + dy * t - worldY;
+                var distance = ex * ex + ey * ey;
+                if (distance < best) { best = distance; nearest = i; nearestT=t; }
+            }
+            var mask:Array<Bool>=[];var along=0.;
+            for(index in 0...count){
+                var a=displayRoute[index];var b=displayRoute[index+1];
+                var length=openfl.geom.Point.distance(a,b);
+                if(index<nearest){mask.push(false);continue;}
+                if(index==nearest)along=-length*nearestT;
+                var midpoint=along+length/2;
+                mask.push(midpoint>=184 && midpoint<=2200);
+                along+=length;
+            }
+            for (batch in routeBatches) batch.show(mask);
+        }
+    }
+
+    public function detach():Void {
+        mount.removeFromParent();
+        backdrop = null;
+        owner = null;
+    }
+
+    function wantsGround():Bool { return displayMode=="ground"||displayMode=="ground_line"; }
+
+    function releaseRoute():Void {
+        for(batch in routeBatches)batch.destroy();
+        routeBatches=[];displayRoute=[];shownRoute=null;routeVisual.visible=false;
+    }
+
+    function releaseGround():Void {
+        groundRing.removeChildren(0,-1,true);
+        orbit=new starling.display.Sprite();
+        if(groundBoss!=null){groundBoss.removeFromParent();groundBoss.dispose();}
+        if(groundGuide!=null){groundGuide.removeFromParent();groundGuide.dispose();}
+        groundNeedle=null;groundBoss=null;groundGuide=null;
+        for(texture in textures)texture.dispose();for(bitmap in bitmaps)bitmap.dispose();
+        textures=[];bitmaps=[];boss=new Sprite();
+    }
+
+    public function setDisplayMode(value:String):Void {
+        displayMode=value;
+        groundRing.visible=wantsGround();
+        if(!wantsGround()&&groundNeedle!=null)releaseGround();
+        var line=value=="ground_line"||value=="line";
+        if(!line)releaseRoute();
+        else routeVisual.visible=shownRoute!=null;
+    }
+
+    public function setSize(value:Float):Void {
+        size = value;
+        groundRing.x = RING_X;
+        groundRing.y = RING_Y;
+        groundRing.rotation = RING_ROTATION;
+        groundRing.alpha = 0.75;
+        groundRing.blendMode = "normal";
+        groundRing.scaleX = value;
+        groundRing.scaleY = value;
+        orbit.scaleY = FLATTEN;
     }
 
     public function showIdle():Void {
         visible = true;
-        needle.visible = hasHeading && !boss.visible;
-        clampPosition();
+        if (groundNeedle != null) groundNeedle.visible = hasHeading && !groundBoss.visible;
     }
 
     public function aim(dx:Float, dy:Float):Void {
         visible = true;
-        boss.visible = false;
+        if (groundNeedle == null) return;
+        groundBoss.visible = false;
         if (Math.isFinite(dx) && Math.isFinite(dy) && dx * dx + dy * dy >= 64) {
-            heading = Math.atan2(dy, dx) * 180 / Math.PI;
-            if (!hasHeading) {
-                needle.rotation = heading;
-                hasHeading = true;
-            }
+            heading = Math.atan2(dy / FLATTEN, dx);
+            directionX = dx;
+            directionY = dy;
+            if (!hasHeading) groundNeedle.rotation = heading;
+            hasHeading = true;
         }
-        needle.visible = hasHeading;
-        clampPosition();
+        groundNeedle.visible = hasHeading;
     }
 
     public function turn(now:Int):Void {
-        var elapsed = Math.min(50, Math.max(0, now - lastTurn));
+        var elapsed = lastTurn == 0 ? 0 : Math.min(50, Math.max(0, now - lastTurn));
         lastTurn = now;
-        if (!visible || !needle.visible || !hasHeading) return;
-
-        var delta = (heading - needle.rotation + 540) % 360 - 180;
-        if (Math.abs(delta) < 1) return;
-        var limit = 0.30 * elapsed;
-        needle.rotation += Math.max(-limit, Math.min(limit, delta * (1 - Math.exp(-elapsed / 85))));
+        if (groundNeedle == null || !visible || !hasHeading || groundBoss.visible) return;
+        var delta = (heading - groundNeedle.rotation + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+        var limit = 1.5 * Math.PI / 180 * elapsed;
+        groundNeedle.rotation += Math.max(-limit, Math.min(limit, delta));
+        groundGuide.visible = false;
     }
+
+    public function setRoute(points:Array<openfl.geom.Point>):Void {
+        routeVisual.visible = displayMode == "ground_line" || displayMode == "line";
+        if (!routeVisual.visible) return;
+        if (points == null || points.length < 2) return;
+        if (shownRoute == points) return;
+        shownRoute = points;
+        for (batch in routeBatches) batch.destroy();
+        // Subdivision only affects visibility; it does not move the stored route.
+        displayRoute = [];
+        if (points.length > 0) displayRoute.push(points[0]);
+        for (i in 0...points.length - 1) {
+            var a = points[i]; var b = points[i + 1];
+            if (openfl.geom.Point.distance(a, b) < 0.01) continue;
+            var count = Std.int(Math.max(1, Math.ceil(openfl.geom.Point.distance(a, b) / 32)));
+            for (j in 1...count + 1) displayRoute.push(new openfl.geom.Point(a.x + (b.x - a.x) * j / count, a.y + (b.y - a.y) * j / count));
+        }
+        routeBatches = [];
+        for (layer in 0...2) {
+            var color = layer == 0 ? 0x9564C7 : 0xE9D2FE;
+            var width = layer == 0 ? 11.52 : 5.4;
+            var opacity = layer == 0 ? 0.4032 : 0.95;
+            var batch = RouteRibbon.batch(displayRoute, color, width, opacity);
+            routeBatches.push(batch); routeVisual.addChild(batch.mesh);
+        }
+        lastVisibilityX = Math.POSITIVE_INFINITY;
+        setWorldPosition(x, y);
+    }
+
+    public function hideRoute():Void { routeVisual.visible = false; }
 
     public function resetHeading():Void {
         hasHeading = false;
-        needle.visible = false;
-        boss.visible = false;
+        releaseRoute();
+        if (groundNeedle == null) return;
+        groundNeedle.visible = false;
+        groundBoss.visible = false;
+        groundGuide.visible = false;
     }
 
     public function showBoss():Void {
-        if (!bossFontChecked) {
-            bossFontChecked = true;
-            for (font in Font.enumerateFonts(false)) {
-                var name = font.fontName.toLowerCase();
-                if (name.indexOf("fat rhino") < 0 && name.indexOf("fatrhino") < 0) continue;
-                var format = bossFormat(font.fontName);
-                for (line in bossLines) {
-                    line.embedFonts = true;
-                    line.defaultTextFormat = format;
-                    line.setTextFormat(format);
-                }
-                layoutBossText();
-                break;
-            }
-        }
         visible = true;
-        needle.visible = false;
-        boss.visible = true;
-        clampPosition();
-    }
-
-    function layoutBossText():Void {
-        var y = 0.;
-        for (line in bossLines) {
-            line.x = (SIZE - line.width) / 2;
-            line.y = y;
-            y += line.textHeight + 1;
-        }
-        var last = bossLines[bossLines.length - 1];
-        boss.y = (SIZE - last.y - last.height) / 2;
-    }
-
-    static function bossFormat(face:String):TextFormat {
-        return new TextFormat(face, 15, 0xFF6850, true);
-    }
-
-    function added(event:Event):Void {
-        clampPosition();
-    }
-
-    function startDragGesture(event:MouseEvent):Void {
-        if (stage == null) return;
-        dragKind = event.target == grip ? 2 : 1;
-        var p = ctx.overlay.globalToLocal(new Point(event.stageX, event.stageY));
-        startX = p.x;
-        startY = p.y;
-        startLeft = x;
-        startTop = y;
-        startScale = scaleX;
-        stage.addEventListener(MouseEvent.MOUSE_MOVE, moveDragGesture);
-        stage.addEventListener(MouseEvent.MOUSE_UP, endDragGesture);
-        stage.addEventListener(Event.DEACTIVATE, endDragGesture);
-        event.stopPropagation();
-    }
-
-    function moveDragGesture(event:MouseEvent):Void {
-        var p = ctx.overlay.globalToLocal(new Point(event.stageX, event.stageY));
-        if (dragKind == 2) {
-            var delta = (p.x - startX + p.y - startY) / 2;
-            var maximum = Math.min(2.5, Math.min((ctx.viewWidth - x) / SIZE, (ctx.viewHeight - y) / SIZE));
-            scaleX = scaleY = Math.max(0.6, Math.min(maximum, startScale + delta / SIZE));
-        } else {
-            x = startLeft + p.x - startX;
-            y = startTop + p.y - startY;
-        }
-        clampPosition();
-        event.updateAfterEvent();
-    }
-
-    function endDragGesture(event:Event):Void {
-        if (dragKind == 0) return;
-        dragKind = 0;
-        if (stage != null) {
-            stage.removeEventListener(MouseEvent.MOUSE_MOVE, moveDragGesture);
-            stage.removeEventListener(MouseEvent.MOUSE_UP, endDragGesture);
-            stage.removeEventListener(Event.DEACTIVATE, endDragGesture);
-        }
-        try {
-            sys.io.File.saveContent(layoutFile, haxe.Json.stringify({x: x, y: y, scale: scaleX}));
-        } catch (error:Dynamic) {
-            ctx.log("Could not save compass layout: " + Std.string(error));
-        }
-    }
-
-    function clampPosition():Void {
-        if (ctx.viewWidth <= 0 || ctx.viewHeight <= 0) return;
-        x = Math.max(0, Math.min(x, ctx.viewWidth - SIZE * scaleX));
-        y = Math.max(0, Math.min(y, ctx.viewHeight - SIZE * scaleY));
-    }
-
-    function loadLayout():Void {
-        x = 35;
-        y = 230;
-        try {
-            if (!sys.FileSystem.exists(layoutFile)) return;
-            var saved:Dynamic = haxe.Json.parse(sys.io.File.getContent(layoutFile));
-            x = number(saved.x, x);
-            y = number(saved.y, y);
-            scaleX = scaleY = Math.max(0.6, Math.min(2.5, number(saved.scale, 1)));
-        } catch (error:Dynamic) {
-            ctx.log("Could not load compass layout: " + Std.string(error));
-        }
-    }
-
-    static function number(value:Dynamic, fallback:Float):Float {
-        if (!Std.isOfType(value, Float) && !Std.isOfType(value, Int)) return fallback;
-        var n:Float = value;
-        return Math.isFinite(n) ? n : fallback;
+        routeVisual.visible = false;
+        if (groundNeedle == null) return;
+        groundNeedle.visible = false;
+        groundGuide.visible = false;
+        groundBoss.visible = displayMode != "flat";
     }
 
     public function destroy():Void {
-        endDragGesture(null);
-        removeEventListener(Event.ADDED_TO_STAGE, added);
-        removeEventListener(MouseEvent.MOUSE_DOWN, startDragGesture);
-        if (arrowArt != null) arrowArt.dispose();
-        arrowArt = null;
+        detach();
+        releaseRoute();
+        mount.removeEventListener(Event.ENTER_FRAME, syncCamera);
+        mount.removeChild(this);
+        dispose();
+        mount.dispose();
+        for (texture in textures) texture.dispose();
+        for (bitmap in bitmaps) bitmap.dispose();
+        textures = [];
+        bitmaps = [];
     }
 }
