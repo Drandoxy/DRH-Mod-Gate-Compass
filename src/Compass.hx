@@ -333,7 +333,7 @@ class Compass extends starling.display.Sprite {
         if (groundNeedle == null) return;
         groundNeedle.visible = false;
         groundGuide.visible = false;
-        groundBoss.visible = displayMode != "flat";
+        groundBoss.visible = false;
     }
 
     public function destroy():Void {

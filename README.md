@@ -7,7 +7,7 @@ The ground compass follows your hero with a cyan ring and direction triangle. Th
 
 Routes are cached from the gate across the known map, with 36 starting routes per tile. The main spawn route is prioritized before the remaining cache warms. Routes account for walls, permanent obstacles, and traps; breakable props are ignored. New areas and changed obstacles update the cache. The line has softened edges and collision-checked rounded corners where space permits.
 
-Inside the exit room, guidance leads to the gate even while it is closed. Boss-only rooms show **Defeat the boss**. The compass hides during Settings, the exit dialog, and dungeon results.
+Inside the exit room, guidance leads to the gate even while it is closed. Boss-only rooms show **Defeat the boss** in Original 2D mode only. The compass hides during Settings, the exit dialog, and dungeon results.
 
 Unused visual buffers and generated textures are released when changing display modes. Routing stays active for the selected mode; disabling Gate Compass stops its updates and clears the cache.
 <!-- /drh:show -->
@@ -28,3 +28,9 @@ Unused visual buffers and generated textures are released when changing display 
 - Improved obstacle handling, rounded corners, and fast direction changes.
 - Added Settings visibility handling and visual-resource cleanup.
 - Uses public host rendering interfaces through `extends`; tested with DRH 18.
+
+## Changes in 0.2.1
+
+- Added Compass Toggle, default Ctrl+Shift+Q, sharing the Enable Gate Compass setting.
+- Turning off stops subscriptions and frame updates and releases route caches and visual resources.
+- Boss objective text is shown only in Original 2D mode.

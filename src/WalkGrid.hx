@@ -236,6 +236,9 @@ class WalkGrid {
 
     public function clear():Void {
         field = null;
+        anchorRoutes = new Map(); anchorTiles = []; anchorCursor = 0;
+        clearance = []; shapeParts = []; focusCell = -1;
+        focusAnnounced = false; anchorsOrdered = false;
         knownLines = [];
         routeLine = [];
         hazards = [];

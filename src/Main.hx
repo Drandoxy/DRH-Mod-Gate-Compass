@@ -10,6 +10,8 @@ import mods.api.dungeon.Floor;
 import mods.api.dungeon.Hero;
 import mods.api.dungeon.Tile;
 import openfl.Lib;
+import openfl.ui.Keyboard;
+import mods.api.settings.Flag;
 import openfl.events.Event;
 import distributedObjects.HeroGameObject;
 import openfl.geom.Point;
@@ -17,6 +19,8 @@ import openfl.geom.Point;
 class Main extends Mod {
     var ctx:Context;
     var setting:Subscription;
+    var toggleSetting:Subscription;
+    var enabledOption:Flag;
     var modeSetting:Subscription;
     var visualMode = "ground_line";
     var floating:FloatingCompass;
@@ -70,7 +74,11 @@ class Main extends Mod {
             if (panel != null) panel.setSize(value);
         });
         var enabled = context.settings.flag("enableCompass", "Enable Gate Compass", "Show directions to the dungeon exit.", true);
+        enabledOption = enabled;
         setting = enabled.onChange(setEnabled);
+        toggleSetting = context.keys.action("compassToggle", "Compass Toggle",
+            "Turn Gate Compass on or off. Off releases route caches and drawing resources.", Keyboard.Q, true, true)
+            .onPress(function() enabledOption.value = !enabledOption.value);
         setEnabled(enabled.value);
     }
 
@@ -379,6 +387,9 @@ class Main extends Mod {
     }
 
     override public function dispose():Void {
+        if (toggleSetting != null) toggleSetting.cancel();
+        toggleSetting = null;
+        enabledOption = null;
         if (modeSetting != null) modeSetting.cancel();
         modeSetting = null;
         if (sizeSetting != null) sizeSetting.cancel();
