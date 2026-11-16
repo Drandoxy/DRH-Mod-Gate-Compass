@@ -19,7 +19,7 @@ import openfl.geom.Point;
 class Main extends Mod {
     var ctx:Context;
     var palette:CompassPalette;
-    var themeColor=0x83ECFF;
+    var themeColor=0x00DFFF;
     var setting:Subscription;
     var toggleSetting:Subscription;
     var enabledOption:Flag;
@@ -28,6 +28,11 @@ class Main extends Mod {
     var floating:FloatingCompass;
     var sizeSetting:Subscription;
     var compassSize = 1.;
+    var tools:CompassTools;
+    var controls:Array<CompassControl>=[];
+    var appearanceSubscriptions:Array<Subscription>=[];
+    var appearanceDirty=0;
+
     var subscriptions:Array<Subscription> = [];
     var geometrySubscriptions:Array<ModSubscription> = [];
     var geometryDirty = true;
@@ -68,13 +73,13 @@ class Main extends Mod {
             if (panel != null) panel.setDisplayMode(value);
             updateFloating();
         });
-        var size = context.settings.slider("groundCompassSize", "Compass size",
-            "Size of the direction ring beneath your hero.", 0.5, 2, 0.1, 1, 1);
-        compassSize = size.value;
-        sizeSetting = size.onChange(function(value) {
-            compassSize = value;
-            if (panel != null) panel.setSize(value);
-        });
+        var circle=context.settings.slider("circleScale","Circle size","Relative to the default circle.",0.5,4,0.01,1,2);
+        var arrow=context.settings.slider("arrowScale","Arrow size","Relative to the default arrow.",0.5,3,0.01,1,2);
+        var route=context.settings.slider("routeStroke","Navigation line width","Relative to the default line width.",0.25,3,0.01,1,2);
+        var stroke=context.settings.slider("circleStroke","Circle width","Relative to the default ring stroke.",0.25,3,0.01,1,2);
+        var offset=context.settings.slider("arrowOffset","Arrow distance","Offset from the automatic ring-edge snap point.",-20,100,1,0,0);
+        controls=[new CompassControl("Circle size",circle,0.5,4),new CompassControl("Arrow size",arrow,0.5,3),new CompassControl("Navigation line width",route,0.25,3),new CompassControl("Circle width",stroke,0.25,3),new CompassControl("Arrow distance",offset,-20,100)];
+        for(control in controls)appearanceSubscriptions.push(control.option.onChange(function(_){appearanceDirty=Lib.getTimer()+120;}));
         var enabled = context.settings.flag("enableCompass", "Enable Gate Compass", "Show directions to the dungeon exit.", true);
         enabledOption = enabled;
         setting = enabled.onChange(setEnabled);
@@ -82,6 +87,12 @@ class Main extends Mod {
             "Turn Gate Compass on or off. Off releases route caches and drawing resources.", Keyboard.Q, true, true)
             .onPress(function() enabledOption.value = !enabledOption.value);
         setEnabled(enabled.value);
+    }
+
+    function applyAppearance():Void {
+        if(panel==null||controls.length<5)return;
+        panel.configure(controls[0].option.value,controls[1].option.value,controls[2].option.value,controls[3].option.value,controls[4].option.value);
+        appearanceDirty=0;
     }
 
     function updateFloating():Void {
@@ -98,7 +109,8 @@ class Main extends Mod {
             palette=new CompassPalette(ctx);
             panel = new Compass(ctx);
             panel.setThemeColor(themeColor);
-            panel.setSize(compassSize);
+            applyAppearance();
+            tools=new CompassTools(ctx,controls);tools.visible=false;ctx.overlay.addChild(tools);
             panel.setDisplayMode(visualMode);
             updateFloating();
             grid = new WalkGrid();
@@ -119,6 +131,7 @@ class Main extends Mod {
                 if (h == hero) {
                     hero = null;
                     panel.visible = false;
+            if(tools!=null)tools.setShown(false);
                     if (floating != null) floating.visible = false;
                     panel.detach();
                 }
@@ -135,6 +148,7 @@ class Main extends Mod {
             clearFloor();
             hero = null;
             grid = null;
+            if(tools!=null){tools.destroy();tools=null;}
             palette = null;
             panel.destroy();
             panel = null;
@@ -187,6 +201,7 @@ class Main extends Mod {
         if (grid != null) grid.clear();
         if (panel != null) {
             panel.visible = false;
+            if(tools!=null)tools.setShown(false);
             if (floating != null) floating.visible = false;
             panel.resetHeading();
             if (floating != null) floating.resetHeading();
@@ -203,6 +218,7 @@ class Main extends Mod {
 
     function update(event:Event):Void {
         var now = Lib.getTimer();
+        if(appearanceDirty>0&&now>=appearanceDirty)applyAppearance();
         panel.turn(now);
         if (floating != null) floating.turn(now);
         if (now < nextUpdate) {
@@ -215,12 +231,14 @@ class Main extends Mod {
         if (floorId == 0 || facade == null || facade.mainStateMachine == null
             || facade.mainStateMachine.currentStateName != "RunState" || facade.gameObjectManager == null) {
             panel.visible = false;
+            if(tools!=null)tools.setShown(false);
             if (floating != null) floating.visible = false;
             return;
         }
         var floor = liveFloor();
         if (floor == null || floor.isDestroyed) {
             panel.visible = false;
+            if(tools!=null)tools.setShown(false);
             if (floating != null) floating.visible = false;
             return;
         }
@@ -231,6 +249,7 @@ class Main extends Mod {
             || (navigation.layerDepth > 1 && (navigation.getAllCurrentLayers().indexOf("EXIT_DUNGEON, ") >= 0
                 || navigation.getAllCurrentLayers().indexOf("SETTINGS_MENU, ") >= 0)))) {
             panel.visible = false;
+            if(tools!=null)tools.setShown(false);
             if (floating != null) floating.visible = false;
             return;
         }
@@ -239,6 +258,7 @@ class Main extends Mod {
             var object = Std.downcast(facade.gameObjectManager.getReferenceFromId(hero.id), HeroGameObject);
             if (object != null && object.heroView != null) panel.attach(object.heroView);
         }
+        if(tools!=null)tools.setShown(true);
         if (!panel.visible) panel.showIdle();
         if (floating != null) floating.visible = visualMode == "flat";
         if (now >= nextGeometry) {
@@ -251,6 +271,7 @@ class Main extends Mod {
         }
         if (goal == null || hero == null) {
             panel.visible = false;
+            if(tools!=null)tools.setShown(false);
             if (floating != null) floating.visible = false;
             return;
         }
@@ -393,6 +414,8 @@ class Main extends Mod {
     }
 
     override public function dispose():Void {
+        for(subscription in appearanceSubscriptions)subscription.cancel();appearanceSubscriptions=[];
+
         if (toggleSetting != null) toggleSetting.cancel();
         toggleSetting = null;
         enabledOption = null;

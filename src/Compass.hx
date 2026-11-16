@@ -18,7 +18,7 @@ import openfl.text.TextFormat;
 /** Native world marker between scenery and actor layers, using public host access. */
 class Compass extends starling.display.Sprite {
     var ctx:Context;
-    var themeColor=0x83ECFF;
+    var themeColor=0x00DFFF;
     var ringArt:Image;
     var displayMode = "ground_line";
     var owner:ActorView;
@@ -52,8 +52,9 @@ class Compass extends starling.display.Sprite {
     var directionX = 0.;
     var directionY = 0.;
     var size = 1.;
-    static inline final RADIUS = 76.;
-    static inline final COLOR = 0xFFFFFF;
+    var arrowSize=1.;var ringWidth=1.;var lineWidth=1.;var arrowOffset=0.;
+    static inline final RADIUS = 98.8;
+    static inline final COLOR = 0x88E9E7;
 
     public function new(context:Context) {
         super();
@@ -64,31 +65,31 @@ class Compass extends starling.display.Sprite {
         // Static concentric strokes give a soft cyan halo and white core;
         // no per-frame blur filter or texture upload is needed.
         for (stroke in [20., 15., 10., 6.]) {
-            ring.graphics.lineStyle(stroke * 0.7, COLOR, stroke == 20 ? 0.08 : stroke == 15 ? 0.15 : stroke == 10 ? 0.32 : 0.8);
+            ring.graphics.lineStyle(stroke * 0.7 * ringWidth, COLOR, stroke == 20 ? 0.08 : stroke == 15 ? 0.15 : stroke == 10 ? 0.32 : 0.8);
             ring.graphics.drawCircle(0, 0, RADIUS * 0.78);
         }
-        ring.graphics.lineStyle(3.15, 0xFFFFFF, 1);
+        ring.graphics.lineStyle(3.15 * ringWidth, 0xFFFFFF, 1);
         ring.graphics.drawCircle(0, 0, RADIUS * 0.78);
         // The cyan base sits outside the ring's core, with a matching halo.
         for (stroke in [12., 8., 4.]) {
             needle.graphics.lineStyle(stroke, COLOR, stroke == 12 ? 0.08 : stroke == 8 ? 0.2 : 0.5);
-            needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 6 + ((RADIUS + 39) - (RADIUS * 0.78 * 1.45 + 6)) * 1.5, 0);
-            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -22.8);
-            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 22.8);
-            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6 + ((RADIUS + 39) - (RADIUS * 0.78 * 1.45 + 6)) * 1.5, 0);
+            needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 6 + ((76. + 39) - (76. * 0.78 * 1.45 + 6)) * 2.34, 0);
+            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -35.568);
+            needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 6, 35.568);
+            needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6 + ((76. + 39) - (76. * 0.78 * 1.45 + 6)) * 2.34, 0);
         }
         needle.graphics.lineStyle(0, COLOR, 0);
         needle.graphics.beginFill(COLOR, 0.95);
-        needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 6 + ((RADIUS + 39) - (RADIUS * 0.78 * 1.45 + 6)) * 1.5, 0);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -22.8);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 22.8);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6 + ((RADIUS + 39) - (RADIUS * 0.78 * 1.45 + 6)) * 1.5, 0);
+        needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 6 + ((76. + 39) - (76. * 0.78 * 1.45 + 6)) * 2.34, 0);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, -35.568);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6, 35.568);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 6 + ((76. + 39) - (76. * 0.78 * 1.45 + 6)) * 2.34, 0);
         needle.graphics.endFill();
         needle.graphics.beginFill(0xFFFFFF, 1);
-        needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 5 + ((RADIUS + 33) - (RADIUS * 0.78 * 1.45 + 5)) * 1.5, 0);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, -12.75);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5, 12.75);
-        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5 + ((RADIUS + 33) - (RADIUS * 0.78 * 1.45 + 5)) * 1.5, 0);
+        needle.graphics.moveTo(RADIUS * 0.78 * 1.45 + 5 + ((76. + 33) - (76. * 0.78 * 1.45 + 5)) * 2.34, 0);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 2, -19.89);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 2, 19.89);
+        needle.graphics.lineTo(RADIUS * 0.78 * 1.45 + 5 + ((76. + 33) - (76. * 0.78 * 1.45 + 5)) * 2.34, 0);
         needle.graphics.endFill();
         addChildAt(routeVisual, 0);
         mount.addChild(this);
@@ -123,12 +124,12 @@ class Compass extends starling.display.Sprite {
         ringImage.x=0;ringImage.y=0;
         ringImage.alpha=1;
         ringArt=ringImage;
-        ringArt.color=themeColor;
+        ringArt.color=0xFFFFFF;
         groundRing.addChild(ringImage);
-        groundNeedle = baked(needle, 272, 272, 136, 136);
-        groundNeedle.pivotX = groundNeedle.pivotY = 136;
+        groundNeedle = baked(needle, 384, 384, 192, 192);
+        groundNeedle.pivotX = groundNeedle.pivotY = 192;
         groundNeedle.rotation=heading;
-        groundNeedle.color=themeColor;
+        groundNeedle.color=0xFFFFFF;
         orbit.addChild(groundNeedle);
         groundRing.addChild(orbit);
         groundGuide = new Quad(1, 2, COLOR);
@@ -143,11 +144,28 @@ class Compass extends starling.display.Sprite {
         addChild(groundBoss);
         setSize(size);
         setDisplayMode(displayMode);
+        positionArrow();
     }
 
     function baked(source:Sprite, width:Int, height:Int, offsetX:Float, offsetY:Float):Image {
         var bitmap = new BitmapData(width, height, true, 0);
         bitmap.draw(source, new Matrix(1, 0, 0, 1, offsetX, offsetY));
+        // Replace only the cyan pigment. Neutral white cores and alpha/glow
+        // remain intact instead of tinting the entire image with Image.color.
+        if(source==ring || source==needle){
+            var tr=(themeColor>>16)&255;var tg=(themeColor>>8)&255;var tb=themeColor&255;
+            for(py in 0...height)for(px in 0...width){
+                var pixel=bitmap.getPixel32(px,py);var alpha=(pixel>>>24)&255;
+                if(alpha==0)continue;
+                var r=(pixel>>16)&255;var g=(pixel>>8)&255;var b=pixel&255;
+                var pigment=Math.min(1.,(Math.max(r,Math.max(g,b))-Math.min(r,Math.min(g,b)))/119.);
+                if(pigment<=0)continue;
+                var nr=Std.int(Math.max(0,Math.min(255,r+(tr-136)*pigment)));
+                var ng=Std.int(Math.max(0,Math.min(255,g+(tg-233)*pigment)));
+                var nb=Std.int(Math.max(0,Math.min(255,b+(tb-231)*pigment)));
+                bitmap.setPixel32(px,py,(alpha<<24)|(nr<<16)|(ng<<8)|nb);
+            }
+        }
         var texture = Texture.fromBitmapData(bitmap, false);
         bitmaps.push(bitmap);
         textures.push(texture);
@@ -227,9 +245,9 @@ class Compass extends starling.display.Sprite {
     }
 
     public function setThemeColor(color:Int):Void {
+        if(themeColor==color)return;
         themeColor=color;
-        if(ringArt!=null)ringArt.color=color;
-        if(groundNeedle!=null)groundNeedle.color=color;
+        if(groundNeedle!=null){releaseGround();if(wantsGround())buildVisuals();}
     }
 
     function wantsGround():Bool { return displayMode=="ground"||displayMode=="ground_line"; }
@@ -258,12 +276,33 @@ class Compass extends starling.display.Sprite {
         else routeVisual.visible=shownRoute!=null;
     }
 
+    public function configure(circle:Float,arrow:Float,routeWidth:Float,stroke:Float,offset:Float):Void {
+        arrowSize=arrow;arrowOffset=offset;setSize(circle);
+        if(lineWidth!=routeWidth){lineWidth=routeWidth;var line=shownRoute;shownRoute=null;if(line!=null)setRoute(line);}
+        if(ringWidth!=stroke){
+            ringWidth=stroke;ring.graphics.clear();
+            for(width in [20.,15.,10.,6.]){ring.graphics.lineStyle(width*0.7*ringWidth,COLOR,width==20?0.08:width==15?0.15:width==10?0.32:0.8);ring.graphics.drawCircle(0,0,RADIUS*0.78);}
+            ring.graphics.lineStyle(3.15*ringWidth,0xFFFFFF,1);ring.graphics.drawCircle(0,0,RADIUS*0.78);
+            if(groundNeedle!=null){releaseGround();if(wantsGround())buildVisuals();}
+        }
+        positionArrow();
+    }
+
+    function positionArrow():Void {
+        if(groundNeedle==null)return;
+        var radius=RADIUS*0.78*1.45;
+        var shift=(radius*size+6+arrowOffset-(radius+6)*arrowSize)/size;
+        groundNeedle.scaleX=groundNeedle.scaleY=arrowSize/size;
+        groundNeedle.x=Math.cos(groundNeedle.rotation)*shift;
+        groundNeedle.y=Math.sin(groundNeedle.rotation)*shift;
+    }
+
     public function setSize(value:Float):Void {
         size = value;
         groundRing.x = RING_X;
         groundRing.y = RING_Y;
         groundRing.rotation = RING_ROTATION;
-        groundRing.alpha = 0.75;
+        groundRing.alpha = 1;
         groundRing.blendMode = "normal";
         groundRing.scaleX = value;
         groundRing.scaleY = value;
@@ -287,6 +326,7 @@ class Compass extends starling.display.Sprite {
             hasHeading = true;
         }
         groundNeedle.visible = hasHeading;
+        positionArrow();
     }
 
     public function turn(now:Int):Void {
@@ -296,6 +336,7 @@ class Compass extends starling.display.Sprite {
         var delta = (heading - groundNeedle.rotation + Math.PI * 3) % (Math.PI * 2) - Math.PI;
         var limit = 1.5 * Math.PI / 180 * elapsed;
         groundNeedle.rotation += Math.max(-limit, Math.min(limit, delta));
+        positionArrow();
         groundGuide.visible = false;
     }
 
@@ -318,7 +359,7 @@ class Compass extends starling.display.Sprite {
         routeBatches = [];
         for (layer in 0...2) {
             var color = layer == 0 ? 0x9564C7 : 0xE9D2FE;
-            var width = layer == 0 ? 11.52 : 5.4;
+            var width = (layer == 0 ? 11.52 : 5.4)*lineWidth;
             var opacity = layer == 0 ? 0.4032 : 0.95;
             var batch = RouteRibbon.batch(displayRoute, color, width, opacity);
             routeBatches.push(batch); routeVisual.addChild(batch.mesh);

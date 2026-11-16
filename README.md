@@ -46,3 +46,6 @@ Unused visual buffers and generated textures are released when changing display 
 ## Changes in 0.2.3
 
 - Enlarged the ground direction triangle and original 2D arrow by 1.5×. The triangle keeps its base against the ring.
+
+
+The floating green settings gear opens a draggable appearance panel above the chat controls. Adjust circle/arrow size, line/ring width, and arrow spacing. Hold the gear for 0.5 seconds to drag; hover a bottom-right corner to resize. Layout and sliders save automatically. Reset restores the default appearance and layout.
