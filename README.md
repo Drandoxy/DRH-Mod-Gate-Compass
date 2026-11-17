@@ -46,6 +46,10 @@ Turning off a guide releases its drawing resources while the others continue wor
 </tr>
 </table>
 
+### Settings
+
+<a href="docs/images/compass-settings.png"><img src="docs/images/compass-settings.png" alt="Compass settings with display switches, Smooth Compass, Reduced Effects, appearance sliders and Reset" width="420"></a>
+
 ## Install
 
 Use **DRH Launcher** to install Gate Compass when available in its mod catalogue, or download the ZIP from the [latest release](https://github.com/Drandoxy/DRH-Mod-Gate-Compass/releases/latest) and install it through the launcher.
