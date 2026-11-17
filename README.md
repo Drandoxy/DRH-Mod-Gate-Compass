@@ -1,57 +1,53 @@
 # Gate Compass
 
 <!-- drh:show -->
-Find your way to the dungeon exit with **Gate Compass**. Switch **2D**, **3D**, and **Pathfinder** independently in the floating settings panel. All three can run together. **Smooth Compass** is enabled by default, easing turns in about 0.3 seconds without a delay; disable it for instant turns.
+Gate Compass helps you find the dungeon gate with compass directions and an optional path on the ground.
 
-The ground compass follows your hero with a ring and direction triangle that change color to contrast with the dungeon theme. Ring and triangle use the same tint and opacity; the original 2D arrow uses the same theme color. The optional lavender route appears on the ground beneath characters and foreground scenery. Both compass styles follow the same route direction, even when Pathfinder is hidden. The original 2D compass can be dragged and resized; ground-compass size is adjustable in Settings.
+## Choose your guides
 
-Routes are cached from the gate across the known map, with 36 starting routes per tile. The main spawn route is prioritized before the remaining cache warms. Routes account for walls, permanent obstacles, and traps; breakable props are ignored. New areas and changed obstacles update the cache. Pathfinder has softened edges and collision-checked rounded corners where space permits.
+Turn each guide on or off independently. You can use any combination, including all three together.
 
-Inside the exit room, guidance leads to the gate even while it is closed. Boss-only rooms show **Defeat the boss** in Original 2D mode only. The compass hides during Settings, the exit dialog, and dungeon results.
+- **2D Compass** — a flat golden compass you can drag and resize.
+- **3D Compass** — a ground ring and direction triangle around your character. Its color adjusts to the dungeon theme to stay visible.
+- **Pathfinder line** — a lavender route toward the gate, with rounded corners and fading ends.
 
-Unused visual buffers and generated textures are released when changing display modes. Routing stays active for the selected mode; disabling Gate Compass stops its updates and clears the cache.
+Both compasses follow the same route as Pathfinder, even when the line is hidden. Guidance accounts for walls, permanent obstacles, and traps; breakable objects are ignored. Inside the exit room, it points toward the gate. In supported boss-only rooms, the 2D compass displays **Defeat the boss**.
+
+## Make it yours
+
+Click the **green settings gear beside chat** to open the floating settings panel.
+
+- Choose which guides to display.
+- Adjust the ground circle size, arrow size, circle width, Pathfinder width, and arrow distance from the ring.
+- Leave **Smooth Compass** on for quick, smooth turns of about **0.3 seconds**, or turn it off for instant direction changes.
+- Use **Reset** to restore the defaults.
+
+Hold the gear for **0.5 seconds**, then drag to move it. Drag the panel by its title bar. Hover over the bottom-right corner of the gear or panel to reveal its resize handle. Your appearance settings, positions, and sizes save automatically.
+
+Press **Ctrl + Shift + Q** to turn Gate Compass on or off. You can change this shortcut under **Compass Toggle** in the game's controls settings.
+
+## Reduced Effects
+
+**Recommended for lower-end devices; off by default.** This option reduces glow, removes the Pathfinder endpoint fade, and refreshes the visible path section less often while you move. Rounded ends remain, and routing and compass turning work the same way. The line still renders normally between visibility updates.
+
+## While you play
+
+Routes are prepared in the background when a match starts, with guidance near your starting position prioritized. The guides hide during the game's Settings menu, exit confirmation, and results screens.
+
+Turning off a guide releases its drawing resources while the others continue working. Turning all three off stops navigation work and clears its caches and graphics; the settings controls remain available. Leaving a match releases its navigation resources too.
 <!-- /drh:show -->
 
-## Preview
+## 2D Compass
 
 <table>
 <tr>
-<td width="70%" align="center"><img src="docs/images/compass-gameplay.png" alt="Golden Gate Compass pointing toward the exit during a dungeon run" width="800"><br>Directions to the exit</td>
-<td width="30%" align="center"><img src="docs/images/boss-objective.png" alt="Gate Compass displaying Defeat the boss on three centered lines" width="350"><br>Boss objective</td>
+<td width="70%" align="center"><img src="docs/images/compass-gameplay.png" alt="2D Compass showing directions during a dungeon run" width="800"><br>2D Compass</td>
+<td width="30%" align="center"><img src="docs/images/boss-objective.png" alt="2D Compass displaying the boss objective" width="350"><br>2D Compass — boss objective</td>
 </tr>
 </table>
 
-## Changes in 0.2.0
+## Install
 
-- Added four compass display modes and a glowing lavender ground route.
-- Added shared route caching, 36 starting routes per tile, and prioritized startup guidance.
-- Improved obstacle handling, rounded corners, and fast direction changes.
-- Added Settings visibility handling and visual-resource cleanup.
-- Uses public host rendering interfaces through `extends`; tested with DRH 18.
+Use **DRH Launcher** to install Gate Compass when available in its mod catalogue, or download the ZIP from the [latest release](https://github.com/Drandoxy/DRH-Mod-Gate-Compass/releases/latest) and install it through the launcher.
 
-## Changes in 0.2.1
-
-- Added Compass Toggle, default Ctrl+Shift+Q, sharing the Enable Gate Compass setting.
-- Turning off stops subscriptions and frame updates and releases route caches and visual resources.
-- Boss objective text is shown only in Original 2D mode.
-
-## Changes in 0.2.2
-
-- Added automatic contrasting compass colors for all nine dungeon theme families.
-- Ring and triangle share the same color; the 2D arrow follows the same palette.
-- Theme selection runs on geometry refresh, without per-frame color calculations. The route remains lavender.
-
-![Theme color examples](docs/images/compass-theme-preview.png)
-
-## Changes in 0.2.3
-
-- Enlarged the ground direction triangle and original 2D arrow by 1.5Ã—. The triangle keeps its base against the ring.
-
-
-The floating green settings gear opens a draggable appearance panel above the chat controls. Adjust circle/arrow size, Pathfinder/ring width, and arrow spacing. Hold the gear for 0.5 seconds to drag; hover a bottom-right corner to resize. Layout and sliders save automatically. Reset restores the default appearance and layout.
-
-Appearance multipliers use the approved baseline: 1x circle size is the original 1 setting, and 1x circle width is the former 2 setting. Arrow size and Pathfinder width retain their previous 1x baselines; default arrow distance is 0.
-
-Pathfinder 1x width now uses the former 1.8x width. Visible ends are rounded and fade completely across 25 world units. Match graphics, route caches, geometry subscriptions, and frame updates are created only after floor data arrives and released on floor exit; settings and lifecycle listeners remain available.
-
-**Reduced Effects** is off by default. We recommend enabling it on lower-end devices to reduce rendering work. Enable it for a single Pathfinder ribbon without the extra glow mesh, less frequent visibility updates (at most about 15 per second), and reduced faint compass glow. It also disables the endpoint fade while retaining rounded ends. Hero following, direction smoothing, and routing are preserved. Reset leaves Reduced Effects off.
+Requires **Dungeon Rampage Haxe 18** and **Mod API 1.4 or later**, including API 1.5. Release history is available on the [Releases page](https://github.com/Drandoxy/DRH-Mod-Gate-Compass/releases).
