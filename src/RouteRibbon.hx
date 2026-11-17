@@ -8,7 +8,7 @@ import starling.styles.MeshStyle;
 
 /** Shared cross sections keep adjacent ribbon pieces gap-free without overlap. */
 class RouteRibbon {
-    public static function batch(points:Array<Point>, color:UInt, width:Float = 2.5, opacity:Float = 0.65):RouteBatch {
+    public static function batch(points:Array<Point>, color:UInt, width:Float = 2.5, opacity:Float = 0.65, fadeEnds:Bool=true):RouteBatch {
         var normals:Array<Point> = [];
         for (i in 0...points.length) {
             var before = points[i == 0 ? 0 : i - 1];
@@ -40,6 +40,6 @@ class RouteRibbon {
                 vertices.setColor(v+4+j,"color",color);vertices.setAlpha(v+4+j,"color",alpha);
             }
         }
-        return new RouteBatch(vertices, opacity, [for(i in 0...points.length-1) Point.distance(points[i],points[i+1])]);
+        return new RouteBatch(vertices, opacity, [for(i in 0...points.length-1) Point.distance(points[i],points[i+1])],fadeEnds);
     }
 }

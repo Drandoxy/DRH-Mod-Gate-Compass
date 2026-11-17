@@ -377,7 +377,7 @@ class Compass extends starling.display.Sprite {
             var color = layer == 0 ? 0x9564C7 : 0xE9D2FE;
             var width = (layer == 0 ? 11.52 : 5.4)*lineWidth;
             var opacity = layer == 0 ? 0.4032 : 0.95;
-            var batch = RouteRibbon.batch(displayRoute, color, width, opacity);
+            var batch = RouteRibbon.batch(displayRoute, color, width, opacity,!reducedEffects);
             routeBatches.push(batch); routeVisual.addChild(batch.mesh);
         }
         lastVisibilityX = Math.POSITIVE_INFINITY;
