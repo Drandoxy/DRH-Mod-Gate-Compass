@@ -50,6 +50,8 @@ class Compass extends starling.display.Sprite {
     var hasHeading = false;
     var lastTurn = 0;
     public var smooth=true;
+    public var reducedEffects=false;
+    var lastVisibilityTime=0;
     var directionX = 0.;
     var directionY = 0.;
     var size = 1.;
@@ -167,6 +169,9 @@ class Compass extends starling.display.Sprite {
                 bitmap.setPixel32(px,py,(alpha<<24)|(nr<<16)|(ng<<8)|nb);
             }
         }
+        if(reducedEffects&&(source==ring||source==needle))for(py in 0...height)for(px in 0...width){
+            var pixel=bitmap.getPixel32(px,py);if(((pixel>>>24)&255)<80)bitmap.setPixel32(px,py,0);
+        }
         var texture = Texture.fromBitmapData(bitmap, false);
         bitmaps.push(bitmap);
         textures.push(texture);
@@ -211,8 +216,10 @@ class Compass extends starling.display.Sprite {
         y = worldY;
         routeVisual.x = -worldX;
         routeVisual.y = -worldY;
+        var now=openfl.Lib.getTimer();
+        if(reducedEffects&&lastVisibilityX!=Math.POSITIVE_INFINITY&&now-lastVisibilityTime<66)return;
         if (Math.abs(worldX - lastVisibilityX) + Math.abs(worldY - lastVisibilityY) < 16) return;
-        lastVisibilityX = worldX; lastVisibilityY = worldY;
+        lastVisibilityX = worldX; lastVisibilityY = worldY;lastVisibilityTime=now;
         if (routeVisual.visible && displayRoute.length > 1 && routeBatches.length > 0) {
             var nearest = -1; var best = Math.POSITIVE_INFINITY;var nearestT=0.;
             var count = displayRoute.length - 1;
@@ -276,6 +283,13 @@ class Compass extends starling.display.Sprite {
         var line=value=="ground_line"||value=="line";
         if(!line)releaseRoute();
         else routeVisual.visible=shownRoute!=null;
+    }
+
+    public function setReducedEffects(value:Bool):Void {
+        if(reducedEffects==value)return;
+        reducedEffects=value;lastVisibilityTime=0;
+        if(groundNeedle!=null){releaseGround();if(wantsGround())buildVisuals();}
+        var line=shownRoute;releaseRoute();if(line!=null)setRoute(line);
     }
 
     public function configure(circle:Float,arrow:Float,routeWidth:Float,stroke:Float,offset:Float):Void {
@@ -359,7 +373,7 @@ class Compass extends starling.display.Sprite {
             for (j in 1...count + 1) displayRoute.push(new openfl.geom.Point(a.x + (b.x - a.x) * j / count, a.y + (b.y - a.y) * j / count));
         }
         routeBatches = [];
-        for (layer in 0...2) {
+        for (layer in (reducedEffects?1:0)...2) {
             var color = layer == 0 ? 0x9564C7 : 0xE9D2FE;
             var width = (layer == 0 ? 11.52 : 5.4)*lineWidth;
             var opacity = layer == 0 ? 0.4032 : 0.95;

@@ -64,7 +64,7 @@ class Main extends Mod {
 
     override public function init(context:Context):Void {
         ctx = context;
-        displayFlags=[context.settings.flag("show2D","Enable 2D Compass","Shows a flat, draggable and resizable compass.",false),context.settings.flag("show3D","Enable 3D Compass","Shows an editable ground compass around your character.",true),context.settings.flag("showPathfinder","Enable Pathfinder line","Shows a pathfinder line to the gate.",true),context.settings.flag("smoothCompass","Smooth Compass","Smooths turns over about 0.3 seconds, with no input delay.",true)];
+        displayFlags=[context.settings.flag("show2D","Enable 2D Compass","Shows a flat, draggable and resizable compass.",false),context.settings.flag("show3D","Enable 3D Compass","Shows an editable ground compass around your character.",true),context.settings.flag("showPathfinder","Enable Pathfinder line","Shows a pathfinder line to the gate.",true),context.settings.flag("smoothCompass","Smooth Compass","Smooths turns over about 0.3 seconds, with no input delay.",true),context.settings.flag("reducedEffects","Reduced Effects","Uses lighter glow and fewer Pathfinder drawing updates for lower-end devices.",false)];
         for(flag in displayFlags)appearanceSubscriptions.push(flag.onChange(function(_){updateDisplays();}));
         updateDisplays();
         var circle=context.settings.slider("circleScaleV3","Circle size","Relative to the default circle.",0.5,4,0.01,1,2);
@@ -98,7 +98,7 @@ class Main extends Mod {
         if(!displayFlags[0].value&&!ground&&!path){stopNavigation();return;}
         if(panel==null&&listening&&floorId!=0)startNavigation();
         visualMode=ground?(path?"ground_line":"ground"):(path?"line":"flat");
-        if(panel!=null){panel.setDisplayMode(visualMode);panel.smooth=displayFlags[3].value;}
+        if(panel!=null){panel.setDisplayMode(visualMode);panel.smooth=displayFlags[3].value;panel.setReducedEffects(displayFlags[4].value);}
         updateFloating();
         if(floating!=null)floating.smooth=displayFlags[3].value;
         nextGeometry=0;nextSearch=0;lastCell=-1;

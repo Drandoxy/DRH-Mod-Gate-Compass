@@ -53,3 +53,5 @@ The floating green settings gear opens a draggable appearance panel above the ch
 Appearance multipliers use the approved baseline: 1x circle size is the original 1 setting, and 1x circle width is the former 2 setting. Arrow size and Pathfinder width retain their previous 1x baselines; default arrow distance is 0.
 
 Pathfinder 1x width now uses the former 1.8x width. Visible ends are rounded and fade completely across 25 world units. Match graphics, route caches, geometry subscriptions, and frame updates are created only after floor data arrives and released on floor exit; settings and lifecycle listeners remain available.
+
+**Reduced Effects** is off by default. We recommend enabling it on lower-end devices to reduce rendering work. Enable it for a single Pathfinder ribbon without the extra glow mesh, less frequent visibility updates (at most about 15 per second), and reduced faint compass glow. Hero following, direction smoothing, routing, and endpoint fading are preserved. Reset leaves Reduced Effects off.
