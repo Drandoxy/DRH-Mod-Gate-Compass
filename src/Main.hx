@@ -22,7 +22,6 @@ class Main extends Mod {
     var themeColor=0x00DFFF;
     var setting:Subscription;
     var toggleSetting:Subscription;
-    var enabledOption:Flag;
     var listening=false;
     var modeSetting:Subscription;
     var visualMode = "ground_line";
@@ -65,7 +64,7 @@ class Main extends Mod {
 
     override public function init(context:Context):Void {
         ctx = context;
-        displayFlags=[context.settings.flag("show2D","2D","Show the original compass.",false),context.settings.flag("show3D","3D","Show the ground compass.",true),context.settings.flag("showPathfinder","Pathfinder","Show the route on the ground.",true),context.settings.flag("smoothCompass","Smooth Compass","Smooth turns over about 0.2 seconds, with no input delay.",true)];
+        displayFlags=[context.settings.flag("show2D","Enable 2D Compass","Shows a flat, draggable and resizable compass.",false),context.settings.flag("show3D","Enable 3D Compass","Shows an editable ground compass around your character.",true),context.settings.flag("showPathfinder","Enable Pathfinder line","Shows a pathfinder line to the gate.",true),context.settings.flag("smoothCompass","Smooth Compass","Smooths turns over about 0.3 seconds, with no input delay.",true)];
         for(flag in displayFlags)appearanceSubscriptions.push(flag.onChange(function(_){updateDisplays();}));
         updateDisplays();
         var circle=context.settings.slider("circleScaleV3","Circle size","Relative to the default circle.",0.5,4,0.01,1,2);
@@ -75,13 +74,15 @@ class Main extends Mod {
         var offset=context.settings.slider("arrowOffsetV2","Arrow distance","Offset from the automatic ring-edge snap point.",-20,100,1,0,0);
         controls=[new CompassControl("Circle size",circle,0.5,4),new CompassControl("Arrow size",arrow,0.5,3),new CompassControl("Pathfinder width",route,0.25,3),new CompassControl("Circle width",stroke,0.25,3),new CompassControl("Arrow distance",offset,-20,100)];
         for(control in controls)appearanceSubscriptions.push(control.option.onChange(function(_){appearanceDirty=Lib.getTimer()+120;}));
-        var enabled = context.settings.flag("enableCompass", "Enable Gate Compass", "Show directions to the dungeon exit.", true);
-        enabledOption = enabled;
-        setting = enabled.onChange(setEnabled);
         toggleSetting = context.keys.action("compassToggle", "Compass Toggle",
             "Turn Gate Compass on or off. Off releases route caches and drawing resources.", Keyboard.Q, true, true)
-            .onPress(function() enabledOption.value = !enabledOption.value);
-        setEnabled(enabled.value);
+            .onPress(function() {
+                var enabled=!listening;setEnabled(enabled);
+                try{sys.io.File.saveContent(ctx.data+"/compass-enabled.json",haxe.Json.stringify({enabled:enabled}));}catch(_:Dynamic){}
+            });
+        var enabled=true;
+        try{var saved:Dynamic=haxe.Json.parse(sys.io.File.getContent(ctx.data+"/compass-enabled.json"));if(saved.enabled==false)enabled=false;}catch(_:Dynamic){}
+        setEnabled(enabled);
     }
 
     function applyAppearance():Void {
@@ -94,11 +95,12 @@ class Main extends Mod {
     function updateDisplays():Void {
         if(displayFlags.length<4)return;
         var ground=displayFlags[1].value;var path=displayFlags[2].value;
+        if(!displayFlags[0].value&&!ground&&!path){stopNavigation();return;}
+        if(panel==null&&listening&&floorId!=0)startNavigation();
         visualMode=ground?(path?"ground_line":"ground"):(path?"line":"flat");
         if(panel!=null){panel.setDisplayMode(visualMode);panel.smooth=displayFlags[3].value;}
         updateFloating();
         if(floating!=null)floating.smooth=displayFlags[3].value;
-        if(grid!=null&&!displayFlags[0].value&&!ground&&!path){grid.clear();geometryDirty=true;tileLayout="";}
         nextGeometry=0;nextSearch=0;lastCell=-1;
     }
 
@@ -136,9 +138,14 @@ class Main extends Mod {
     }
 
     function startMatchResources():Void {
-        palette=new CompassPalette(ctx);panel=new Compass(ctx);panel.setThemeColor(themeColor);applyAppearance();
         tools=new CompassTools(ctx,controls,displayFlags);tools.visible=false;ctx.overlay.addChild(tools);
-        grid=new WalkGrid();updateDisplays();
+        updateDisplays();
+        if(panel==null)tools.setShown(true);
+    }
+
+    function startNavigation():Void {
+        palette=new CompassPalette(ctx);panel=new Compass(ctx);panel.setThemeColor(themeColor);applyAppearance();
+        grid=new WalkGrid();
         for(h in ctx.state.heroes)trackHero(h);
             geometrySubscriptions.push(ctx.core.onObjectReady(collisionActorChanged));
             geometrySubscriptions.push(ctx.core.onObjectGone(collisionActorChanged));
@@ -151,6 +158,17 @@ class Main extends Mod {
                 }
             }));
         ctx.overlay.addEventListener(Event.ENTER_FRAME,update);
+    }
+
+    function stopNavigation():Void {
+        ctx.overlay.removeEventListener(Event.ENTER_FRAME,update);
+        for(subscription in geometrySubscriptions)subscription.cancel();geometrySubscriptions=[];
+        if(grid!=null)grid.clear();grid=null;
+        if(floating!=null){floating.destroy();if(floating.parent!=null)floating.parent.removeChild(floating);floating=null;}
+        if(panel!=null){panel.destroy();panel=null;}
+        hero=null;palette=null;goal=null;gate=null;gateId=0;waypoint=null;checkedWaypoint=null;lastSearchRoom=null;
+        tileLayout="";geometryDirty=true;startupRefresh=0;startupPass=0;lastRegion="";
+        nextGeometry=0;nextSearch=0;nextUpdate=0;lastCell=-1;appearanceDirty=0;
     }
 
     function trackHero(h:Hero):Void {
@@ -171,8 +189,8 @@ class Main extends Mod {
     function onFloorEnter(floor:Floor):Void {
         clearFloor();
         if(!listening||floor==null)return;
-        startMatchResources();
         floorId = floor.id;
+        startMatchResources();
     }
 
     function clearFloor():Void {
@@ -194,20 +212,9 @@ class Main extends Mod {
         lastCell = -1;
         lastSearchRoom = null;
         lastRegion = "";
-        if (grid != null) grid.clear();
-        if (panel != null) {
-            panel.visible = false;
-            if(tools!=null)tools.setShown(false);
-            if (floating != null) floating.visible = false;
-            panel.resetHeading();
-            if (floating != null) floating.resetHeading();
-            panel.detach();
-        }
-        ctx.overlay.removeEventListener(Event.ENTER_FRAME,update);
+        stopNavigation();
         if(tools!=null){tools.destroy();tools=null;}
-        if(floating!=null){floating.destroy();if(floating.parent!=null)floating.parent.removeChild(floating);floating=null;}
-        if(panel!=null){panel.destroy();panel=null;}
-        grid=null;palette=null;hero=null;
+        hero=null;
     }
 
     function liveFloor():DistributedDungeonFloor {
@@ -218,6 +225,7 @@ class Main extends Mod {
     }
 
     function update(event:Event):Void {
+        if(panel==null||grid==null)return;
         var now = Lib.getTimer();
         if(appearanceDirty>0&&now>=appearanceDirty)applyAppearance();
         panel.turn(now);
@@ -421,7 +429,6 @@ class Main extends Mod {
 
         if (toggleSetting != null) toggleSetting.cancel();
         toggleSetting = null;
-        enabledOption = null;
         if (modeSetting != null) modeSetting.cancel();
         modeSetting = null;
         if (sizeSetting != null) sizeSetting.cancel();

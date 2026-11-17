@@ -1,7 +1,7 @@
 # Gate Compass
 
 <!-- drh:show -->
-Find your way to the dungeon exit with **Gate Compass**. Switch **2D**, **3D**, and **Pathfinder** independently in the floating settings panel. All three can run together. **Smooth Compass** is enabled by default, easing turns in about 0.2 seconds without a delay; disable it for instant turns.
+Find your way to the dungeon exit with **Gate Compass**. Switch **2D**, **3D**, and **Pathfinder** independently in the floating settings panel. All three can run together. **Smooth Compass** is enabled by default, easing turns in about 0.3 seconds without a delay; disable it for instant turns.
 
 The ground compass follows your hero with a ring and direction triangle that change color to contrast with the dungeon theme. Ring and triangle use the same tint and opacity; the original 2D arrow uses the same theme color. The optional lavender route appears on the ground beneath characters and foreground scenery. Both compass styles follow the same route direction, even when Pathfinder is hidden. The original 2D compass can be dragged and resized; ground-compass size is adjustable in Settings.
 

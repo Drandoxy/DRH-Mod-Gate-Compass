@@ -337,7 +337,7 @@ class Compass extends starling.display.Sprite {
         lastTurn = now;
         if (groundNeedle == null || !visible || !hasHeading || groundBoss.visible) return;
         var delta = (heading - groundNeedle.rotation + Math.PI * 3) % (Math.PI * 2) - Math.PI;
-        groundNeedle.rotation += smooth ? delta * (1-Math.exp(-elapsed/50.)) : delta;
+        groundNeedle.rotation += smooth ? delta * (1-Math.exp(-elapsed/75.)) : delta;
         positionArrow();
         groundGuide.visible = false;
     }
@@ -355,7 +355,7 @@ class Compass extends starling.display.Sprite {
         for (i in 0...points.length - 1) {
             var a = points[i]; var b = points[i + 1];
             if (openfl.geom.Point.distance(a, b) < 0.01) continue;
-            var count = Std.int(Math.max(1, Math.ceil(openfl.geom.Point.distance(a, b) / 5)));
+            var count = Std.int(Math.max(1, Math.ceil(openfl.geom.Point.distance(a, b) / 10)));
             for (j in 1...count + 1) displayRoute.push(new openfl.geom.Point(a.x + (b.x - a.x) * j / count, a.y + (b.y - a.y) * j / count));
         }
         routeBatches = [];
