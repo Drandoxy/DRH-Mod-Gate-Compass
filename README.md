@@ -37,12 +37,12 @@ Routes are prepared in the background when a match starts, with guidance near yo
 Turning off a guide releases its drawing resources while the others continue working. Turning all three off stops navigation work and clears its caches and graphics; the settings controls remain available. Leaving a match releases its navigation resources too.
 <!-- /drh:show -->
 
-## 2D Compass
+## In-game previews
 
 <table>
 <tr>
-<td width="70%" align="center"><img src="docs/images/compass-gameplay.png" alt="2D Compass showing directions during a dungeon run" width="800"><br>2D Compass</td>
-<td width="30%" align="center"><img src="docs/images/boss-objective.png" alt="2D Compass displaying the boss objective" width="350"><br>2D Compass — boss objective</td>
+<td width="50%" align="center"><a href="docs/images/compass-with-effects.png"><img src="docs/images/compass-with-effects.png" alt="2D compass, 3D compass and Pathfinder with effects enabled" width="600"></a><br><strong>With Effects</strong></td>
+<td width="50%" align="center"><a href="docs/images/compass-reduced-effects.png"><img src="docs/images/compass-reduced-effects.png" alt="2D compass, 3D compass and Pathfinder with Reduced Effects enabled" width="600"></a><br><strong>Reduced Effects</strong></td>
 </tr>
 </table>
 
