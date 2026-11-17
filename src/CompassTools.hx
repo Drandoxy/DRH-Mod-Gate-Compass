@@ -38,29 +38,33 @@ class CompassTools extends Sprite {
  }
  function label(text:String,size:Int):TextField{var t=new TextField();t.defaultTextFormat=new TextFormat("_sans",size,0xF2F8EF,true);t.width=300;t.height=27;t.selectable=false;t.text=text;return t;}
  function block(e:MouseEvent):Void{e.stopPropagation();}
- function toggle(e:MouseEvent):Void{e.stopPropagation();if(suppressClick){suppressClick=false;return;}popup.visible=!popup.visible;clampPopup();refresh();}
+ function toggle(e:MouseEvent):Void{e.stopPropagation();if(suppressClick){suppressClick=false;return;}popup.visible=!popup.visible;if(popup.visible)anchorPopup();refresh();}
  function close(e:MouseEvent):Void{e.stopPropagation();popup.visible=false;save();}
  function defaultLayout():Void{button.scaleX=button.scaleY=1.5833333333;popup.scaleX=popup.scaleY=1;x=ctx.viewWidth/2+392.6;y=ctx.viewHeight-75;popup.x=-3.36;popup.y=-popupHeight-10;clampPopup();}
  function resetDefaults(e:MouseEvent):Void{e.stopPropagation();for(c in controls)c.option.value=c.label=="Arrow distance"?0:1;for(i in 0...flags.length)flags[i].value=i>0&&i<4;defaultLayout();refresh();save();}
  function grip(handle:Sprite,parent:Sprite,hx:Float,hy:Float):Void{handle.graphics.beginFill(0x90B985,1);handle.graphics.drawRect(0,0,16,16);handle.graphics.endFill();var marks=new Sprite();marks.mouseEnabled=false;marks.visible=false;handle.addChild(marks);handle.graphics.beginFill(0,0);handle.graphics.drawRect(0,0,16,16);handle.graphics.endFill();marks.graphics.lineStyle(1,0xFFFFFF);marks.graphics.moveTo(3,12);marks.graphics.lineTo(12,3);marks.graphics.moveTo(8,12);marks.graphics.lineTo(12,8);handle.addEventListener(MouseEvent.ROLL_OVER,function(e){marks.visible=true;});handle.addEventListener(MouseEvent.ROLL_OUT,function(e){marks.visible=false;});handle.alpha=1;handle.graphics.clear();handle.graphics.beginFill(0,0);handle.graphics.drawRect(0,0,16,16);handle.graphics.endFill();handle.x=hx;handle.y=hy;handle.buttonMode=true;parent.addChild(handle);handle.addEventListener(MouseEvent.MOUSE_DOWN,resize);if(parent==button){button.mouseChildren=true;handle.addEventListener(MouseEvent.CLICK,block);}}
  function resize(e:MouseEvent):Void{e.stopPropagation();layoutKind=e.currentTarget==buttonGrip?2:3;origin.x=e.stageX;origin.y=e.stageY;initialScale=layoutKind==2?button.scaleX:popup.scaleX;listen();}
  function buttonDown(e:MouseEvent):Void{e.stopPropagation();layoutKind=1;pressTime=haxe.Timer.stamp();suppressClick=false;origin.x=e.stageX;origin.y=e.stageY;initial.x=x;initial.y=y;listen();}
+ function anchorPopup():Void{
+  // Derive the top from the current panel height and scale, never an old saved Y.
+  popup.x=-3.36;popup.y=-popupHeight*popup.scaleY-10;clampPopup();
+ }
  function clampPopup():Void{popup.x=Math.max(-x,Math.min(ctx.viewWidth-x-320*popup.scaleX,popup.x));popup.y=Math.max(-y,Math.min(ctx.viewHeight-y-popupHeight*popup.scaleY,popup.y));}
  function drag(e:MouseEvent):Void{e.stopPropagation();var p=popup.globalToLocal(new Point(e.stageX,e.stageY));moving=true;var at=globalToLocal(new Point(e.stageX,e.stageY));offset.x=at.x-popup.x;offset.y=at.y-popup.y;listen();}
  function listen():Void{if(stage!=null){stage.addEventListener(MouseEvent.MOUSE_MOVE,slide);stage.addEventListener(MouseEvent.MOUSE_UP,finish);}}
  function slide(e:MouseEvent):Void{
-  if(layoutKind==1){var dx=e.stageX-origin.x;var dy=e.stageY-origin.y;if(haxe.Timer.stamp()-pressTime>=.5&&Math.abs(dx)+Math.abs(dy)>4){suppressClick=true;x=Math.max(0,Math.min(ctx.viewWidth-38*button.scaleX,initial.x+dx));y=Math.max(0,Math.min(ctx.viewHeight-38*button.scaleY,initial.y+dy));clampPopup();}}
+  if(layoutKind==1){var dx=e.stageX-origin.x;var dy=e.stageY-origin.y;if(haxe.Timer.stamp()-pressTime>=.5&&Math.abs(dx)+Math.abs(dy)>4){suppressClick=true;x=Math.max(0,Math.min(ctx.viewWidth-38*button.scaleX,initial.x+dx));y=Math.max(0,Math.min(ctx.viewHeight-38*button.scaleY,initial.y+dy));anchorPopup();}}
   if(layoutKind==2){var value=Math.max(.6,Math.min(3,initialScale+(e.stageX-origin.x+e.stageY-origin.y)/72));button.scaleX=button.scaleY=value;}
-  if(layoutKind==3){var value=Math.max(.65,Math.min(2,initialScale+(e.stageX-origin.x+e.stageY-origin.y)/645));popup.scaleX=popup.scaleY=value;clampPopup();}
+  if(layoutKind==3){var value=Math.max(.65,Math.min(2,initialScale+(e.stageX-origin.x+e.stageY-origin.y)/645));popup.scaleX=popup.scaleY=value;anchorPopup();}
   if(moving){var at=globalToLocal(new Point(e.stageX,e.stageY));popup.x=Math.max(-x,Math.min(ctx.viewWidth-x-320*popup.scaleX,at.x-offset.x));popup.y=Math.max(-y,Math.min(ctx.viewHeight-y-popupHeight*popup.scaleY,at.y-offset.y));}if(active>=0){var p=tracks[active].globalToLocal(new Point(e.stageX,e.stageY));var c=controls[active];var value=c.minimum+Math.max(0,Math.min(1,p.x/280))*(c.maximum-c.minimum);c.option.value=Math.round(value*100)/100;refresh();}}
  function finish(e:MouseEvent):Void{active=-1;moving=false;layoutKind=0;if(stage!=null){stage.removeEventListener(MouseEvent.MOUSE_MOVE,slide);stage.removeEventListener(MouseEvent.MOUSE_UP,finish);}save();}
  function refresh():Void{for(i in 0...switches.length){var g=switches[i].graphics;g.clear();g.beginFill(flags[i].value?0x43B750:0x526159);g.drawRoundRect(0,0,44,22,22,22);g.endFill();g.beginFill(0xFFFFFF);g.drawCircle(flags[i].value?33:11,11,8);g.endFill();}for(i in 0...controls.length){var c=controls[i];labels[i].text=c.label+": "+Math.round(c.option.value*100)/100;var g=tracks[i].graphics;g.clear();g.beginFill(0,0);g.drawRect(-6,-12,292,24);g.endFill();g.lineStyle(6,0x405347);g.moveTo(0,0);g.lineTo(280,0);var at=(c.option.value-c.minimum)/(c.maximum-c.minimum)*280;g.lineStyle(6,0x72CE65);g.moveTo(0,0);g.lineTo(at,0);g.beginFill(0xFFFFFF);g.drawCircle(at,0,8);g.endFill();}}
  public function setShown(value:Bool):Void{if(value&&!layoutReady&&ctx.viewWidth>0&&ctx.viewHeight>0){defaultLayout();load();layoutReady=true;}if(!value&&visible)finish(null);visible=value;}
- function load():Void{try{var p:Dynamic=haxe.Json.parse(sys.io.File.getContent(ctx.data+"/compass-tools.json"));if(p.layoutVersion!=3&&p.layoutVersion!=4)return;if(p.buttonY==0&&p.y>0)return;if(p.x!=null)popup.x=p.x;if(p.y!=null)popup.y=p.y;
+ function load():Void{try{var p:Dynamic=haxe.Json.parse(sys.io.File.getContent(ctx.data+"/compass-tools.json"));if(p.layoutVersion!=3&&p.layoutVersion!=4)return;if(p.buttonY==0&&p.y>0)return;if(p.x!=null)popup.x=p.x;
  if(p.buttonX!=null)x=p.buttonX;if(p.buttonY!=null)y=p.buttonY;
  if(p.buttonScale!=null)button.scaleX=button.scaleY=Math.max(.6,Math.min(3,p.buttonScale));
  if(p.popupScale!=null)popup.scaleX=popup.scaleY=Math.max(.65,Math.min(2,p.popupScale));
- x=Math.max(0,Math.min(ctx.viewWidth-38*button.scaleX,x));y=Math.max(0,Math.min(ctx.viewHeight-38*button.scaleY,y));clampPopup();}catch(_:Dynamic){}}
+ x=Math.max(0,Math.min(ctx.viewWidth-38*button.scaleX,x));y=Math.max(0,Math.min(ctx.viewHeight-38*button.scaleY,y));anchorPopup();}catch(_:Dynamic){}}
  function save():Void{if(!layoutReady||ctx.viewWidth<=0||ctx.viewHeight<=0)return;try{sys.io.File.saveContent(ctx.data+"/compass-tools.json",haxe.Json.stringify({layoutVersion:4,x:popup.x,y:popup.y,buttonX:x,buttonY:y,buttonScale:button.scaleX,popupScale:popup.scaleX}));}catch(_:Dynamic){}}
  public function destroy():Void{finish(null);button.removeEventListener(MouseEvent.CLICK,toggle);button.removeEventListener(MouseEvent.MOUSE_DOWN,buttonDown);popup.removeEventListener(MouseEvent.MOUSE_DOWN,block);if(parent!=null)parent.removeChild(this);}
 }

@@ -7,9 +7,9 @@ Gate Compass helps you find the dungeon gate with compass directions and an opti
 
 Turn each guide on or off independently. You can use any combination, including all three together.
 
-- **2D Compass** — a flat golden compass you can drag and resize.
-- **3D Compass** — a ground ring and direction triangle around your character. Its color adjusts to the dungeon theme to stay visible.
-- **Pathfinder line** — a lavender route toward the gate, with rounded corners and fading ends.
+- **2D Compass** - a flat golden compass you can drag and resize.
+- **3D Compass** - a ground ring and direction triangle around your character. Its color adjusts to the dungeon theme to stay visible.
+- **Pathfinder line** - a lavender route toward the gate, with rounded corners and fading ends.
 
 Both compasses follow the same route as Pathfinder, even when the line is hidden. Guidance accounts for walls, permanent obstacles, and traps; breakable objects are ignored. Inside the exit room, it points toward the gate. In supported boss-only rooms, the 2D compass displays **Defeat the boss**.
 
