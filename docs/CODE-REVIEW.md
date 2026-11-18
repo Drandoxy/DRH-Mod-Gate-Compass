@@ -1,0 +1,11 @@
+# Local code review, 2026-11-17
+
+Three review passes covered layout/state ownership, resource lifetime and native API contracts, then regressions and packaging. All modified Haxe sources use haxe-formatter 1.18.0.
+
+Party Time: native popup button records now have explicit types; popup children use typed OpenFL setters. Title, button and background bounds determine layout without modifying the native popup origin, tweens or saved title baselines. Closed popups skip layout; unchanged open titles reuse it. The modal owns a temporary navigation layer and keyboard/controller listeners, leaving the host's global input callback untouched. Empty rosters do not allocate party assets, panels or game/presence watchers. Removing the final member releases them. A previously requested automatic-next/restart hold remains only until town.
+
+Compass: the MODS tab has one settings-opening button; Ctrl+Shift+O also opens the live panel. There is no HUD gear. The ten controls exist only in that panel. Local preferences migrate the API's previous options without writing its settings.json. Slider saves commit after interaction/debounce. Persistent trap trigger cycles no longer dirty geometry. Geometry fingerprints are compared before cell allocation, rasterization, route invalidation and clearance rebuilding. Trap creation/removal and changed collision geometry still rebuild.
+
+Validation: Party Time module type checks against interface doubles, 43 state/layout behavior checks, 34 simulated join/consent/retry checks, native button lifecycle checks, modal keyboard/controller checks, and a new empty-roster startup/add/remove test passed. Compass preferences, migration, clamp, notification disposal, persistence, unchanged-grid cache reuse and changed-layout rebuilding passed. The real CompassTools and WalkGrid code were type-checked with host/graphics doubles. Formatter checks passed for every shipped source.
+
+These are offline checks, not native game compilation, rendered layout verification, crash reproduction or FPS measurements. No computer-control session or new game launch was used for this review. A launcher metadata check is not a game compiler check. The existing native crash cannot be declared resolved solely from these results.
