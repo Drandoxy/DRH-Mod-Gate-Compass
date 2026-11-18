@@ -18,6 +18,12 @@ import openfl.text.TextFormat;
 /** Native world marker between scenery and actor layers, using public host access. */
 class Compass extends starling.display.Sprite {
 	var ctx:Context;
+
+	public var stats:NavigationStats;
+
+	var windowX = Math.POSITIVE_INFINITY;
+	var windowY = Math.POSITIVE_INFINITY;
+	var blankMask = false;
 	var themeColor = 0x00DFFF;
 	var ringArt:Image;
 	var displayMode = "ground_line";
@@ -62,6 +68,7 @@ class Compass extends starling.display.Sprite {
 
 	var lastVisibilityTime = 0;
 	var lineLength = 2200.;
+	var lineStart = 135.;
 	var directionX = 0.;
 	var directionY = 0.;
 	var size = 1.;
@@ -175,34 +182,10 @@ class Compass extends starling.display.Sprite {
 		// Replace only the cyan pigment. Neutral white cores and alpha/glow
 		// remain intact instead of tinting the entire image with Image.color.
 		if (source == ring || source == needle) {
-			var tr = (themeColor >> 16) & 255;
-			var tg = (themeColor >> 8) & 255;
-			var tb = themeColor & 255;
-			for (py in 0...height)
-				for (px in 0...width) {
-					var pixel = bitmap.getPixel32(px, py);
-					var alpha = (pixel >>> 24) & 255;
-					if (alpha == 0)
-						continue;
-					var r = (pixel >> 16) & 255;
-					var g = (pixel >> 8) & 255;
-					var b = pixel & 255;
-					var pigment = Math.min(1., (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b))) / 119.);
-					if (pigment <= 0)
-						continue;
-					var nr = Std.int(Math.max(0, Math.min(255, r + (tr - 136) * pigment)));
-					var ng = Std.int(Math.max(0, Math.min(255, g + (tg - 233) * pigment)));
-					var nb = Std.int(Math.max(0, Math.min(255, b + (tb - 231) * pigment)));
-					bitmap.setPixel32(px, py, (alpha << 24) | (nr << 16) | (ng << 8) | nb);
-				}
+			bitmap.applyFilter(bitmap, bitmap.rect, new openfl.geom.Point(), new openfl.filters.ColorMatrixFilter(PaletteTransform.matrix(themeColor)));
+			if (reducedEffects)
+				bitmap.threshold(bitmap, bitmap.rect, new openfl.geom.Point(), "<", 0x50000000, 0, 0xFF000000, false);
 		}
-		if (reducedEffects && (source == ring || source == needle))
-			for (py in 0...height)
-				for (px in 0...width) {
-					var pixel = bitmap.getPixel32(px, py);
-					if (((pixel >>> 24) & 255) < 80)
-						bitmap.setPixel32(px, py, 0);
-				}
 		var texture = Texture.fromBitmapData(bitmap, false);
 		bitmaps.push(bitmap);
 		textures.push(texture);
@@ -254,6 +237,8 @@ class Compass extends starling.display.Sprite {
 		y = worldY;
 		routeVisual.x = -worldX;
 		routeVisual.y = -worldY;
+		if (shownRoute != null && Math.abs(worldX - windowX) + Math.abs(worldY - windowY) > 600)
+			setRoute(shownRoute, true);
 		var now = openfl.Lib.getTimer();
 		var moved = Math.abs(worldX - lastVisibilityX) + Math.abs(worldY - lastVisibilityY);
 		if (reducedEffects && moved < 96 && lastVisibilityX != Math.POSITIVE_INFINITY && now - lastVisibilityTime < 66)
@@ -264,7 +249,13 @@ class Compass extends starling.display.Sprite {
 		lastVisibilityY = worldY;
 		lastVisibilityTime = now;
 		if (routeVisual.visible && displayRoute.length > 1 && routeBatches.length > 0) {
-			var mask = RouteVisibility.mask(displayRoute, worldX, worldY, RouteVisibility.START_DISTANCE, lineLength);
+			var mask = RouteVisibility.mask(displayRoute, worldX, worldY, RouteVisibility.startDistance(lineStart, lineLength), lineLength);
+			var blank = !RouteVisibility.drawable(mask);
+			if (stats != null && blank && !blankMask) {
+				stats.zeroMasks++;
+				stats.event("empty-mask", {x: worldX, y: worldY, points: displayRoute.length});
+			}
+			blankMask = blank;
 			for (batch in routeBatches)
 				batch.show(mask);
 		}
@@ -355,6 +346,15 @@ class Compass extends starling.display.Sprite {
 			setRoute(line);
 	}
 
+	public function setLineStart(value:Float):Void {
+		lineStart = Math.max(0, Math.min(500, value));
+		rejectedRoute = null;
+		lastVisibilityX = Math.POSITIVE_INFINITY;
+		lastVisibilityY = Math.POSITIVE_INFINITY;
+		if (shownRoute != null)
+			setRoute(shownRoute, true);
+	}
+
 	public function setLineLength(value:Float):Void {
 		var next = Math.max(300, Math.min(2200, value));
 		if (next == lineLength)
@@ -365,6 +365,8 @@ class Compass extends starling.display.Sprite {
 		lastVisibilityX = Math.POSITIVE_INFINITY;
 		lastVisibilityY = Math.POSITIVE_INFINITY;
 		lastVisibilityTime = 0;
+		if (shownRoute != null)
+			setRoute(shownRoute, true);
 	}
 
 	public function configure(circle:Float, arrow:Float, routeWidth:Float, stroke:Float, offset:Float):Void {
@@ -455,22 +457,24 @@ class Compass extends starling.display.Sprite {
 		groundGuide.visible = false;
 	}
 
-	public function setRoute(points:Array<openfl.geom.Point>):Void {
+	public function setRoute(points:Array<openfl.geom.Point>, refreshWindow:Bool = false):Void {
 		routeVisual.visible = displayMode == "ground_line" || displayMode == "line";
 		if (!routeVisual.visible)
 			return;
 		if (points == null || points.length < 2)
 			return;
-		if (shownRoute == points)
+		if (shownRoute == points && !refreshWindow)
 			return;
 		if (rejectedRoute == points && Math.abs(x - rejectedX) + Math.abs(y - rejectedY) < 32)
 			return;
+		var meshStarted = haxe.Timer.stamp();
 		// Prepare a complete replacement without touching the displayed meshes.
+		var window = RouteWindow.cut(points, x, y, lineLength + 1000);
 		var nextDisplay:Array<openfl.geom.Point> = [];
-		nextDisplay.push(points[0]);
-		for (i in 0...points.length - 1) {
-			var a = points[i];
-			var b = points[i + 1];
+		nextDisplay.push(window[0]);
+		for (i in 0...window.length - 1) {
+			var a = window[i];
+			var b = window[i + 1];
 			var distance = openfl.geom.Point.distance(a, b);
 			if (distance < 0.01)
 				continue;
@@ -478,9 +482,13 @@ class Compass extends starling.display.Sprite {
 			for (j in 1...count + 1)
 				nextDisplay.push(new openfl.geom.Point(a.x + (b.x - a.x) * j / count, a.y + (b.y - a.y) * j / count));
 		}
-		var mask = RouteVisibility.mask(nextDisplay, x, y, RouteVisibility.START_DISTANCE, lineLength);
+		var mask = RouteVisibility.mask(nextDisplay, x, y, RouteVisibility.startDistance(lineStart, lineLength), lineLength);
 		// A new prefix entirely inside the head fade must not erase a good line.
 		if (!RouteVisibility.drawable(mask)) {
+			if (stats != null) {
+				stats.rejectedSwaps++;
+				stats.event("blank-replacement", {x: x, y: y, points: points.length});
+			}
 			rejectedRoute = points;
 			rejectedX = x;
 			rejectedY = y;
@@ -502,14 +510,36 @@ class Compass extends starling.display.Sprite {
 		routeBatches = nextBatches;
 		displayRoute = nextDisplay;
 		shownRoute = points;
+		windowX = x;
+		windowY = y;
+		blankMask = false;
+		if (stats != null) {
+			if (stats.swaps == 0 && stats.initialSearchStarted >= 0)
+				stats.firstMeshDelayMs = (haxe.Timer.stamp() - stats.initialSearchStarted) * 1000;
+			stats.swaps++;
+			stats.event("route-swap", {
+				x: x,
+				y: y,
+				sourcePoints: points.length,
+				meshPoints: nextDisplay.length,
+				windowRefresh: refreshWindow
+			});
+		}
 		lastVisibilityX = x;
 		lastVisibilityY = y;
 		lastVisibilityTime = openfl.Lib.getTimer();
 		for (batch in previous)
 			batch.destroy();
+		if (stats != null) {
+			var elapsed = (haxe.Timer.stamp() - meshStarted) * 1000;
+			stats.meshMs += elapsed;
+			stats.maximumMeshMs = Math.max(stats.maximumMeshMs, elapsed);
+		}
 	}
 
 	public function hideRoute():Void {
+		if (stats != null && routeVisual.visible)
+			stats.event("route-hidden", {x: x, y: y, shownPoints: shownRoute == null ? 0 : shownRoute.length});
 		routeVisual.visible = false;
 	}
 

@@ -1,0 +1,1 @@
+package distributedObjects;class NPCGameObject{public var id:UInt=1;public var type=0;public var isDestroyed=false;public var position:openfl.geom.Point;public var distributedDungeonFloor:DistributedDungeonFloor;public var gmNpc:Dynamic;public var isProp=false;public var isNavigable=false;public var team=0;public function new(){}}

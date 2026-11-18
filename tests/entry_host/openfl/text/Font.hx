@@ -1,0 +1,1 @@
+package openfl.text;class Font{public var fontName="test";public static function enumerateFonts(device:Bool):Array<Font>{return [];}}

@@ -1,0 +1,1 @@
+package box2D.common.math;class B2Vec2{public var x:Float;public var y:Float;public function new(x:Float,y:Float){this.x=x;this.y=y;}}

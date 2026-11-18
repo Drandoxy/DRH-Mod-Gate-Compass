@@ -1,0 +1,1 @@
+package mods.api;class Dictionaries {public static function keys(d:Dynamic):Array<Dynamic>{return [];}public static function remove(d:Dynamic,k:Dynamic):Void{}}

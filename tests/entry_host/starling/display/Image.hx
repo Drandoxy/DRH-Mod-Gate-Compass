@@ -1,0 +1,1 @@
+package starling.display;class Image extends Sprite{public var color:UInt;public function new(t:starling.textures.Texture){super();}public function setStyle(s:starling.styles.MeshStyle):Void{}}

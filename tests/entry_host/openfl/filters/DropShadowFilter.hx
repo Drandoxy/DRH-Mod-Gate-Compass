@@ -1,0 +1,1 @@
+package openfl.filters;class DropShadowFilter{public function new(d:Float,a:Float,c:UInt,alpha:Float,bx:Float,by:Float,s:Float){}}

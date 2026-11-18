@@ -1,0 +1,1 @@
+package openfl.events;class Event {public static var DEACTIVATE="deactivate";public static var ADDED_TO_STAGE="added";public static var ENTER_FRAME="enterFrame";public function new(){}}

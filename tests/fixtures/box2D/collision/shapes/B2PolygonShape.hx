@@ -1,0 +1,1 @@
+package box2D.collision.shapes;class B2PolygonShape{public var vertices:Array<Dynamic>=[];public function new(){}public function GetVertexCount():Int{return vertices.length;}public function GetVertices():Array<Dynamic>{return vertices;}}

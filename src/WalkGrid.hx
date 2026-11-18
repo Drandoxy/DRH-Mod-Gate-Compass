@@ -16,9 +16,26 @@ class WalkGrid {
 	public var lowPower = false;
 	public var routeDirection = new Point(1, 0);
 
-	var anchorRoutes:Map<String, Array<Array<Point>>> = new Map();
-	var anchorProgress:Map<String, Int> = new Map();
-	var anchorCursor = 0;
+	public static inline final COMPASS_LOOKAHEAD = 15.;
+
+	public var routeLimit = 36;
+	public var stats = new NavigationStats();
+
+	var geometryBuild:GeometryBuild;
+	var publishedGeometry:GeometryBuild;
+	var queuedTiles:Array<Tile>;
+	var desiredGoal:Tile;
+	var desiredGate:Point;
+	var desiredGateId:UInt = 0;
+	var measurementRequested = false;
+	var measurementSerial = 0;
+
+	var plans:RouteCache;
+	var planGrid:RouteGrid;
+	var appliedPlan:Array<Point>;
+	var heroX = 0.;
+	var heroY = 0.;
+
 	var knownLines:Array<Array<Point>> = [];
 	var hazards:Array<Bool> = [];
 	var clearance:Array<Int> = [];
@@ -31,19 +48,6 @@ class WalkGrid {
 	var routeGateId:UInt = 0;
 	var shapeKey = "";
 	var lineOrigin:Point;
-	var refineSource:Array<Point>;
-	var refineResult:Array<Point>;
-	var refineRoom:Tile;
-	var refineAt = 0;
-	var refineCandidate = 0;
-	var curveLine:Array<Point>;
-	var curveResult:Array<Point>;
-	var curveAt = 0;
-	var shortcutsComplete = false;
-	var cornerCache:Map<String, Array<Point>> = new Map();
-	var cornerKeys:Array<String> = [];
-	var nextVisualPublish = 0;
-	var curveCache:Array<{source:Array<Point>, rounded:Array<Point>}> = [];
 
 	var shapeParts:Array<String> = [];
 	var cells:Array<Bool> = [];
@@ -63,134 +67,84 @@ class WalkGrid {
 	public function new() {}
 
 	public function refresh(floor:DistributedDungeonFloor, tiles:Array<Tile>):Void {
-		var sameFloor = this.floor == floor;
-		this.floor = floor;
 		if (tiles.length == 0 || floor.box2DWorld == null) {
 			clear();
 			return;
 		}
-		// Fingerprint before rasterization or route invalidation. The previous
-		// implementation rebuilt all cells and clearance even for identical data.
-		shapeParts = [
-			for (tile in tiles)
-				tile.id + ":" + tile.x + ":" + tile.y + ":" + tile.category + ":" + tile.exits.join(",")
-		];
-		var shapes:Array<{
-			hazard:Bool,
-			points:Array<Point>,
-			cx:Float,
-			cy:Float,
-			radius:Float
-		}> = [];
-		forEachCollision(function(points) {
-			shapeParts.push((markingHazard ? "H" : "P") + [for (p in points) p.x + ":" + p.y].join(","));
-			shapes.push({
-				hazard: markingHazard,
-				points: points,
-				cx: 0.,
-				cy: 0.,
-				radius: 0.
-			});
-		}, function(cx, cy, radius) {
-			shapeParts.push((markingHazard ? "H" : "C") + cx + ":" + cy + ":" + radius);
-			shapes.push({
-				hazard: markingHazard,
-				points: null,
-				cx: cx,
-				cy: cy,
-				radius: radius
-			});
-		});
-		shapeParts.sort(Reflect.compare);
-		var key = shapeParts.join(";");
-		shapeParts = [];
-		if (sameFloor && key == shapeKey)
+		if (this.floor != null && this.floor != floor)
+			clear();
+		this.floor = floor;
+		if (geometryBuild != null) {
+			queuedTiles = tiles.copy();
 			return;
-		field = null;
-		cancelRefinement();
-		lineOrigin = null;
-		curveCache = [];
-		cornerCache = new Map();
-		cornerKeys = [];
-		routeLine = [];
-		visualRoute = [];
-		edgeChecks = new Map();
-		invalidateRoute();
-		cells = [];
-		rooms = [];
-		tilesByPosition = new Map();
-		nearCollider = [];
-
-		left = Math.POSITIVE_INFINITY;
-		top = Math.POSITIVE_INFINITY;
-		var right = Math.NEGATIVE_INFINITY;
-		var bottom = Math.NEGATIVE_INFINITY;
-		for (tile in tiles) {
-			left = Math.min(left, tile.x);
-			top = Math.min(top, tile.y);
-			right = Math.max(right, tile.x + Tile.SIZE);
-			bottom = Math.max(bottom, tile.y + Tile.SIZE);
 		}
-		var subdivisions = Std.int(Math.max(1, Math.min(25, Math.floor(256 * Tile.SIZE / Math.max(right - left, bottom - top)))));
-		step = Tile.SIZE / subdivisions;
-		width = Std.int(Math.ceil((right - left) / step));
-		height = Std.int(Math.ceil((bottom - top) / step));
-
-		cells = [for (i in 0...width * height) false];
-		hazards = [for (i in 0...width * height) false];
-		nearCollider = [for (i in 0...width * height) false];
-		for (tile in tiles) {
-			tilesByPosition.set(tileKey(tile.x, tile.y), tile);
-			var col = Math.round((tile.x - left) / step);
-			var row = Math.round((tile.y - top) / step);
-			for (y in row...row + subdivisions)
-				for (x in col...col + subdivisions) {
-					var i = y * width + x;
-					rooms[i] = tile;
-					cells[i] = true;
-				}
-		}
-
-		for (shape in shapes) {
-			markingHazard = shape.hazard;
-			if (shape.points != null)
-				markPolygon(shape.points);
-			else
-				markCircle(shape.cx, shape.cy, shape.radius);
-		}
-		markingHazard = false;
-		buildClearance();
-		shapeKey = key;
+		geometryBuild = new GeometryBuild(floor, tiles, publishedGeometry, function(f:B2Fixture) {
+			return blocksMovement(f);
+		});
 	}
 
-	function buildClearance():Void {
-		clearance = [for (i in 0...cells.length) 1000];
-		var queue:Array<Int> = [];
-		for (i in 0...cells.length) {
-			var col = i % width;
-			var row = Std.int(i / width);
-			if (!cells[i] || col == 0 || row == 0 || col == width - 1 || row == height - 1) {
-				clearance[i] = 0;
-				queue.push(i);
-			}
+	public function requestMeasurement():Void {
+		measurementRequested = true;
+		measurementSerial = stats.manualSerial;
+	}
+
+	public function cancelMeasurement():Void {
+		measurementRequested = false;
+		if (plans != null)
+			plans.cancelTest();
+	}
+
+	public function geometryPending():Bool {
+		return geometryBuild != null;
+	}
+
+	public function advanceGeometry(ms:Float, maxSteps:Int = 4096):Bool {
+		if (geometryBuild == null)
+			return false;
+		var job = geometryBuild;
+		var started = haxe.Timer.stamp();
+		job.runSlice(ms, maxSteps);
+		var elapsed = (haxe.Timer.stamp() - started) * 1000;
+		stats.geometryMs += elapsed;
+		stats.maximumGeometryMs = Math.max(stats.maximumGeometryMs, elapsed);
+		if (!job.done)
+			return false;
+		geometryBuild = null;
+		if (job.changed) {
+			field = null;
+			lineOrigin = null;
+			resetPlans();
+			routeLine = [];
+			visualRoute = [];
+			edgeChecks = new Map();
+			invalidateRoute();
+			focusAnnounced = false;
+			cells = job.cells;
+			rooms = job.rooms;
+			hazards = job.hazards;
+			nearCollider = job.near;
+			clearance = job.clearance;
+			tilesByPosition = job.tilesByPosition;
+			left = job.left;
+			top = job.top;
+			step = job.spacing;
+			width = job.width;
+			height = job.height;
+			publishedGeometry = job;
+			shapeKey = job.layout;
+			focusCell = cellAt(heroX, heroY);
+			if (desiredGoal != null)
+				prepareField(desiredGoal, desiredGate, desiredGateId);
+			stats.event("geometry-published", {cells: cells.length, steps: job.steps});
 		}
-		var head = 0;
-		while (head < queue.length) {
-			var i = queue[head++];
-			var col = i % width;
-			var row = Std.int(i / width);
-			for (next in [
-				index(col - 1, row),
-				index(col + 1, row),
-				index(col, row - 1),
-				index(col, row + 1)
-			]) {
-				if (next < 0 || next >= cells.length || clearance[next] <= clearance[i] + 1)
-					continue;
-				clearance[next] = clearance[i] + 1;
-				queue.push(next);
-			}
+		if (queuedTiles != null) {
+			var tiles = queuedTiles;
+			queuedTiles = null;
+			geometryBuild = new GeometryBuild(floor, tiles, publishedGeometry, function(f:B2Fixture) {
+				return blocksMovement(f);
+			});
 		}
+		return job.changed;
 	}
 
 	function corridorClear(x:Float, y:Float, target:Point, ignoredGate:UInt = 0):Bool {
@@ -216,119 +170,19 @@ class WalkGrid {
 		return true;
 	}
 
-	function forEachCollision(polygonFound:Array<Point>->Void, circleFound:Float->Float->Float->Void):Void {
-		if (floor == null || floor.box2DWorld == null)
-			return;
-		var body = floor.box2DWorld.GetBodyList();
-		while (body != null) {
-			var actorData = body.GetUserData();
-			var actor = actorData == null
-				|| floor.remoteActors == null ? null : Std.downcast(floor.remoteActors.itemFor(actorData), NPCGameObject);
-			var persistentTrap = actor != null && actor.gmNpc != null && actor.gmNpc.Species == "TRAP";
-			if (body.IsActive() || persistentTrap) {
-				var fixture = body.GetFixtureList();
-				while (fixture != null) {
-					var data = body.GetUserData();
-					var npc = data == null
-						|| floor.remoteActors == null ? null : Std.downcast(floor.remoteActors.itemFor(data), NPCGameObject);
-					markingHazard = npc != null && npc.gmNpc != null && npc.gmNpc.Species == "TRAP";
-					if (markingHazard || blocksMovement(fixture)) {
-						var polygon = Std.downcast(fixture.GetShape(), B2PolygonShape);
-						var circle = Std.downcast(fixture.GetShape(), B2CircleShape);
-						if (polygon != null && polygon.GetVertexCount() >= 3) {
-							var vertices = polygon.GetVertices();
-							var points = [];
-							for (i in 0...polygon.GetVertexCount()) {
-								var vertex = body.GetWorldPoint(cast vertices[i]);
-								points.push(new Point(vertex.x * 50, vertex.y * 50));
-							}
-							polygonFound(points);
-						} else if (circle != null) {
-							var center = body.GetWorldPoint(circle.GetLocalPosition());
-							circleFound(center.x * 50, center.y * 50, circle.GetRadius() * 50);
-						}
-					}
-					markingHazard = false;
-					fixture = fixture.GetNext();
-				}
-			}
-			body = body.GetNext();
-		}
-	}
-
-	// Keep a small clearance around static collision shapes without sealing narrow doors.
-	static inline final CLEARANCE = 20.;
-
-	function markCircle(cx:Float, cy:Float, radius:Float):Void {
-		var extent = radius + CLEARANCE;
-		markCells(cx - extent, cy - extent, cx + extent, cy + extent, function(x, y) {
-			var dx = x - cx;
-			var dy = y - cy;
-			return dx * dx + dy * dy <= extent * extent;
-		});
-	}
-
-	function markPolygon(points:Array<Point>):Void {
-		var minX = Math.POSITIVE_INFINITY;
-		var minY = Math.POSITIVE_INFINITY;
-		var maxX = Math.NEGATIVE_INFINITY;
-		var maxY = Math.NEGATIVE_INFINITY;
-		for (p in points) {
-			minX = Math.min(minX, p.x);
-			minY = Math.min(minY, p.y);
-			maxX = Math.max(maxX, p.x);
-			maxY = Math.max(maxY, p.y);
-		}
-		markCells(minX - CLEARANCE, minY - CLEARANCE, maxX + CLEARANCE, maxY + CLEARANCE, function(x, y) {
-			var inside = false;
-			var a = points[points.length - 1];
-			for (b in points) {
-				var dx = b.x - a.x;
-				var dy = b.y - a.y;
-				var lengthSquared = dx * dx + dy * dy;
-				if (lengthSquared > 0) {
-					var t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lengthSquared));
-					var ex = x - a.x - t * dx;
-					var ey = y - a.y - t * dy;
-					if (ex * ex + ey * ey <= CLEARANCE * CLEARANCE)
-						return true;
-				}
-				if ((a.y > y) != (b.y > y) && x < a.x + (y - a.y) * dx / dy)
-					inside = !inside;
-				a = b;
-			}
-			return inside;
-		});
-	}
-
-	function markCells(minX:Float, minY:Float, maxX:Float, maxY:Float, contains:Float->Float->Bool):Void {
-		var x0 = Std.int(Math.max(0, Math.floor((minX - left) / step) - 1));
-		var y0 = Std.int(Math.max(0, Math.floor((minY - top) / step) - 1));
-		var x1 = Std.int(Math.min(width, Math.ceil((maxX - left) / step) + 1));
-		var y1 = Std.int(Math.min(height, Math.ceil((maxY - top) / step) + 1));
-		for (y in y0...y1)
-			for (x in x0...x1) {
-				var i = y * width + x;
-				nearCollider[i] = true;
-				if (contains(left + (x + 0.5) * step, top + (y + 0.5) * step)) {
-					if (markingHazard)
-						hazards[i] = true;
-					else
-						cells[i] = false;
-				}
-			}
-	}
-
 	public function clear():Void {
+		measurementRequested = false;
+		if (geometryBuild != null)
+			geometryBuild.cancel();
+		geometryBuild = null;
+		publishedGeometry = null;
+		queuedTiles = null;
+		desiredGoal = null;
+		desiredGate = null;
+		desiredGateId = 0;
 		field = null;
-		cancelRefinement();
 		lineOrigin = null;
-		curveCache = [];
-		cornerCache = new Map();
-		cornerKeys = [];
-		anchorRoutes = new Map();
-		anchorProgress = new Map();
-		anchorCursor = 0;
+		resetPlans();
 		clearance = [];
 		shapeParts = [];
 		focusCell = -1;
@@ -451,105 +305,160 @@ class WalkGrid {
 	}
 
 	public function prepareField(goal:Tile, gate:Point, gateId:UInt):Void {
+		desiredGoal = goal;
+		desiredGate = gate;
+		desiredGateId = gateId;
+		if (cells.length == 0)
+			return;
 		var key = goal.id + ":" + goal.x + ":" + goal.y + ":" + gateId + (gate == null ? "" : ":" + gate.x + ":" + gate.y);
 		if (field != null && field.key == key)
 			return;
 		routeLine = [];
 		visualRoute = [];
 		lineOrigin = null;
-		curveCache = [];
-		cornerCache = new Map();
-		cornerKeys = [];
-		cancelRefinement();
-		anchorRoutes = new Map();
-		anchorProgress = new Map();
-		anchorCursor = 0;
+		resetPlans();
 		focusAnnounced = false;
 		field = new RouteField(goal, gate, gateId, key, cells.length);
+		if (stats.initialSearchStarted < 0)
+			stats.initialSearchStarted = haxe.Timer.stamp();
 		routeGoal = key;
 		routeGateId = gateId;
 	}
 
 	/** One reverse search fills the next step for every reachable cell. */
 	public function prioritize(x:Float, y:Float):Void {
+		heroX = x;
+		heroY = y;
 		focusCell = cellAt(x, y);
 	}
 
-	public function advanceField(allowWarmup:Bool = true):Bool {
-		if (field == null)
-			return false;
-		if (refineSource != null) {
-			if (roomAtCell(focusCell) != refineRoom)
-				cancelRefinement();
-			else {
-				var refineDeadline = haxe.Timer.stamp() + (lowPower ? 0.00025 : 0.0005);
-				for (i in 0...4) {
-					if (refineSource == null)
-						break;
-					if (refineStep())
-						return true;
-					if (haxe.Timer.stamp() >= refineDeadline)
-						break;
-				}
-			}
-		}
+	function resetPlans():Void {
+		if (plans != null)
+			plans.clear();
+		plans = null;
+		planGrid = null;
+		appliedPlan = null;
+	}
 
-		if (field.phase == 2) {
-			if (lowPower || !allowWarmup)
-				return false;
-			// Work follows the current room. Returning to a room resumes its
-			// remaining samples; abandoned rooms receive no preparation time.
-			var tile = roomAtCell(focusCell);
-			if (tile == null)
-				return false;
-			var roomKey = tileKey(tile.x, tile.y);
-			var progress = anchorProgress.get(roomKey);
-			var part = progress == null ? 0 : progress;
-			if (part >= 6)
-				return false;
-			anchorProgress.set(roomKey, part + 1);
-			anchorCursor++;
-			{
-				var x = tile.x + (part % 3 + 0.5) * Tile.SIZE / 3;
-				var y = tile.y + (Std.int(part / 3) + 0.5) * Tile.SIZE / 2;
-				var cell = cellAt(x, y);
-				var best = -1;
-				var distance = Math.POSITIVE_INFINITY;
-				if (cell >= 0)
-					for (dy in -2...3)
-						for (dx in -2...3) {
-							var candidate = index(cell % width + dx, Std.int(cell / width) + dy);
-							if (!walkable(candidate) || !field.settled[candidate] || rooms[candidate] != tile)
-								continue;
-							var p = point(candidate);
-							var d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
-							if (d < distance) {
-								distance = d;
-								best = candidate;
-							}
-						}
-				var route = best < 0 ? [] : cachedLine(best, point(best));
-				var key = tileKey(tile.x, tile.y);
-				var routes = anchorRoutes.get(key);
-				if (routes == null) {
-					routes = [];
-					anchorRoutes.set(key, routes);
-				}
-				routes.push(route);
-			}
+	function ensurePlans():Void {
+		if (plans != null || field == null || cells.length == 0)
+			return;
+		planGrid = new RouteGrid(cells, hazards, rooms, nearCollider, edgeChecks, width, height, left, top, step);
+		planGrid.checkEdge = canCross;
+		plans = new RouteCache(planGrid, field.next, field.gate, stats);
+		plans.setLimit(routeLimit);
+		plans.lowPower = lowPower;
+	}
+
+	public function advanceField(allowWarmup:Bool = true):Bool {
+		var totalBudget = lowPower ? 0.6 : 1.5;
+		var geometryStarted = haxe.Timer.stamp();
+		var geometryChanged = advanceGeometry(cells.length == 0 ? totalBudget : totalBudget * .4);
+		var available = totalBudget - (haxe.Timer.stamp() - geometryStarted) * 1000;
+		if (field == null || available <= .02)
+			return geometryChanged;
+		ensurePlans();
+		if (plans == null)
 			return false;
+		plans.lowPower = lowPower;
+		plans.setLimit(routeLimit);
+		if (measurementRequested && stats.manualSerial > measurementSerial)
+			measurementRequested = false;
+		if (measurementRequested && !plans.hasTest() && focusCell >= 0 && field.settled[focusCell] && field.next[focusCell] >= 0)
+			plans.requestTest(focusCell);
+		var budget = available;
+		var started = haxe.Timer.stamp();
+		var changed = geometryChanged;
+		// The first validated curved section and pending foreground route use
+		// the existing budget before optional completion of the shared field.
+		if (plans.foregroundPending()) {
+			plans.advance(roomAtCell(focusCell), budget, false);
+		} else {
+			changed = advanceFieldWork(budget) || geometryChanged;
+			// A full-seed fallback can replace the field and its planner.
+			ensurePlans();
+			if (plans == null)
+				return changed;
+			var remaining = budget - (haxe.Timer.stamp() - started) * 1000;
+			if (remaining > 0.02)
+				plans.advance(roomAtCell(focusCell), remaining, allowWarmup);
 		}
+		planGrid.complete = field.phase == 2;
+		if (visualRoute.length < 2 && plans.preview != null && adoptCompleted(plans.preview))
+			changed = true;
+		var entry:RoutePlan = plans.foreground;
+		if (entry != null && entry.line != null && entry.line != appliedPlan) {
+			if (adoptCompleted(entry.line))
+				changed = true;
+			else if (focusCell >= 0)
+				plans.request(focusCell);
+		}
+		return changed;
+	}
+
+	function retryGateSeeds():Bool {
+		if (field == null || field.fullSeeds || field.gate == null)
+			return false;
+		var previous = field;
+		field = new RouteField(previous.goal, previous.gate, previous.gateId, previous.key, cells.length);
+		field.fullSeeds = true;
+		resetPlans();
+		focusAnnounced = false;
+		stats.event("full-gate-seed-retry", {});
+		return true;
+	}
+
+	// A fixed consistent Manhattan heuristic prioritizes the initial hero.
+	// Keeping it fixed lets the same search finish the reusable destination
+	// field without invalidating settled costs as the player moves.
+	function fieldHeuristic(cell:Int):Float {
+		if (field.initialFocus < 0)
+			return 0.;
+		return Math.abs(cell % width - field.initialFocus % width) + Math.abs(Std.int(cell / width) - Std.int(field.initialFocus / width));
+	}
+
+	function advanceFieldWork(budgetMs:Float):Bool {
+		if (field == null || field.phase == 2)
+			return false;
+
 		var f = field;
-		var deadline = haxe.Timer.stamp()
-			+ (lowPower ? (focusCell >= 0 && focusCell < f.settled.length && !f.settled[focusCell] ? 0.001 : 0.00035) : (focusCell >= 0
-				&& focusCell < f.settled.length && !f.settled[focusCell] ? 0.003 : 0.001));
+		if (f.initialFocus < 0 && focusCell >= 0)
+			f.initialFocus = focusCell;
+		var deadline = haxe.Timer.stamp() + budgetMs / 1000;
 		var work = 0;
 		while (work++ < 1536 && haxe.Timer.stamp() < deadline) {
+			if (f.phase == -1) {
+				if (f.initialized < f.count) {
+					f.scores.push(Math.POSITIVE_INFINITY);
+					f.next.push(-1);
+					f.settled.push(false);
+					f.initialized++;
+				} else
+					f.phase = 0;
+				continue;
+			}
 			if (f.phase == 0) {
 				var side = Math.round(Tile.SIZE / step);
-				if (f.scan < side * side) {
-					var offset = f.scan++;
-					var cell = index(Math.round((f.goal.x - left) / step) + offset % side, Math.round((f.goal.y - top) / step) + Std.int(offset / side));
+				if (f.seedCells == null) {
+					f.seedCells = [];
+					for (offset in 0...side * side) {
+						var cell = index(Math.round((f.goal.x - left) / step) + offset % side, Math.round((f.goal.y - top) / step) + Std.int(offset / side));
+						if (walkable(cell))
+							f.seedCells.push(cell);
+					}
+					var end = f.gate == null ? new Point(f.goal.x + Tile.SIZE / 2, f.goal.y + Tile.SIZE / 2) : f.gate;
+					f.seedCells.sort(function(a:Int, b:Int) {
+						var ax = left + (a % width + 0.5) * step - end.x;
+						var ay = top + (Std.int(a / width) + 0.5) * step - end.y;
+						var bx = left + (b % width + 0.5) * step - end.x;
+						var by = top + (Std.int(b / width) + 0.5) * step - end.y;
+						var ad = ax * ax + ay * ay;
+						var bd = bx * bx + by * by;
+						return ad < bd ? -1 : ad > bd ? 1 : 0;
+					});
+				}
+				if (f.scan < f.seedCells.length) {
+					var cell = f.seedCells[f.scan++];
 					if (!walkable(cell))
 						continue;
 					var p = point(cell);
@@ -559,14 +468,19 @@ class WalkGrid {
 					var dx = p.x - end.x;
 					var dy = p.y - end.y;
 					var distance = dx * dx + dy * dy;
-					if (f.gate != null && canAim(p.x, p.y, f.gate, f.gateId) && hazardFree(p.x, p.y, f.gate)) {
+					// Once a safe approach exists, distant room cells do not
+					// need their own direct-to-gate ray. The field reaches them.
+					if (!f.fullSeeds && f.seeds.length > 0 && distance > Math.pow(Math.max(180., step * 3), 2))
+						continue;
+					var visibleToGate = f.gate == null || canAim(p.x, p.y, f.gate, f.gateId);
+					if (f.gate != null && visibleToGate && hazardFree(p.x, p.y, f.gate)) {
 						// Closed gates can split the nearest cells into separate
 						// islands. Cache every visible approach, on either side.
 						f.seeds.push(cell);
 						f.scores[cell] = Math.sqrt(distance) / step;
 						f.next[cell] = cell;
 					}
-					if (distance < f.distance && (f.gate == null || canAim(p.x, p.y, f.gate, f.gateId))) {
+					if (distance < f.distance && visibleToGate) {
 						f.seed = cell;
 						f.distance = distance;
 					}
@@ -582,10 +496,12 @@ class WalkGrid {
 					f.seeds.push(f.seed);
 				}
 				for (seed in f.seeds)
-					fieldPush(f.heap, new RouteNode(seed, f.scores[seed]));
+					fieldPush(f.heap, new RouteNode(seed, f.scores[seed] + fieldHeuristic(seed)));
 				f.phase = 1;
 			}
 			if (f.heap.length == 0) {
+				if (focusCell >= 0 && !f.settled[focusCell] && retryGateSeeds())
+					return false;
 				f.phase = 2;
 				return true;
 			}
@@ -609,13 +525,17 @@ class WalkGrid {
 				f.scores[next] = score;
 				f.next[next] = current;
 				// Reverse Dijkstra uses immutable costs, with no per-hero search.
-				fieldPush(f.heap, new RouteNode(next, score));
+				fieldPush(f.heap, new RouteNode(next, score + fieldHeuristic(next)));
 			}
 			if (!focusAnnounced && current == focusCell) {
 				focusAnnounced = true;
-				adoptLine(cachedLine(current, point(current)), point(current));
-				// Publish the main spawn-to-gate line immediately, before
-				// preparing up to six rough alternatives per room in later slices.
+				if (routeLine.length < 2) {
+					routeLine = cachedLine(current, point(current));
+					lineOrigin = point(current);
+				}
+				ensurePlans();
+				plans.request(current);
+				// Prioritize the spawn-to-gate plan before room alternatives.
 				return true;
 			}
 		}
@@ -624,61 +544,75 @@ class WalkGrid {
 
 	public function waypoint(x:Float, y:Float, goal:Tile, gate:Point, gateId:UInt = 0):Point {
 		prepareField(goal, gate, gateId);
-		if (lineOrigin != null && Point.distance(lineOrigin, new Point(x, y)) >= 900) {
+		ensurePlans();
+		heroX = x;
+		heroY = y;
+		if (plans == null)
+			return null;
+		// Full completed plans survive tile crossings. Only cheap temporary
+		// arrow guidance needs recentring while a plan is still being built.
+		if (appliedPlan == null && lineOrigin != null && Point.distance(lineOrigin, new Point(x, y)) >= 900) {
 			var start = cellAt(x, y);
 			if (field != null && start >= 0 && field.settled[start] && field.next[start] >= 0) {
-				var next = cachedLine(start, new Point(x, y));
-				if (next.length > 1)
-					adoptLine(next, new Point(x, y));
+				routeLine = cachedLine(start, new Point(x, y));
+				lineOrigin = new Point(x, y);
 			}
-		}
-
-		// Keep a valid branch stable instead of swapping nearby anchors on
-		// every small movement or as additional anchors finish warming.
-		var currentRoom = roomAtCell(cellAt(x, y));
-		if (routeLine.length > 1 && refineRoom != currentRoom) {
-			var start = cellAt(x, y);
-			if (field != null && start >= 0 && field.settled[start] && field.next[start] >= 0)
-				adoptLine(cachedLine(start, new Point(x, y)), new Point(x, y));
-			else
-				startRefinement(routeLine, currentRoom);
 		}
 		var existing = followLine(x, y);
 		if (existing != null)
 			return existing;
-		var tile = roomAtCell(cellAt(x, y));
-		var routes = tile == null || lowPower ? null : anchorRoutes.get(tileKey(tile.x, tile.y));
-		var chosen:Array<Point> = null;
-		var closest = Math.POSITIVE_INFINITY;
-		cachedQueries = true;
-		if (routes != null)
-			for (line in routes)
-				for (i in 0...line.length - 1) {
-					var a = line[i];
-					var b = line[i + 1];
-					var dx = b.x - a.x;
-					var dy = b.y - a.y;
-					var length = dx * dx + dy * dy;
-					var t = length == 0 ? 0. : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / length));
-					var p = new Point(a.x + dx * t, a.y + dy * t);
-					var distance = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
-					if (distance < closest && clearGridLine(x, y, p)) {
-						closest = distance;
-						chosen = line;
-					}
-				}
-		cachedQueries = false;
-		if (chosen != null)
-			adoptLine(chosen, new Point(x, y));
-		var retained = followLine(x, y);
-		if (retained != null)
-			return retained;
+		var currentRoom = roomAtCell(cellAt(x, y));
+		var alternatives = plans.alternatives(currentRoom);
+		alternatives.sort(function(a:RoutePlan, b:RoutePlan) {
+			var ap = planGrid.point(a.cell);
+			var bp = planGrid.point(b.cell);
+			var ad = (ap.x - x) * (ap.x - x) + (ap.y - y) * (ap.y - y);
+			var bd = (bp.x - x) * (bp.x - x) + (bp.y - y) * (bp.y - y);
+			return ad < bd ? -1 : ad > bd ? 1 : 0;
+		});
+		for (i in 0...Std.int(Math.min(4, alternatives.length))) {
+			var entry:RoutePlan = alternatives[i];
+			if (adoptCompleted(entry.line)) {
+				stats.hits++;
+				return followLine(x, y);
+			}
+		}
 		var start = cellAt(x, y);
-		if (start < 0 || field == null || !field.settled[start] || field.next[start] < 0)
+		if (start < 0 || field == null || !field.settled[start] || field.next[start] < 0) {
+			if (start >= 0 && field != null && field.phase == 2)
+				retryGateSeeds();
 			return null;
-		// Initial guidance uses the already-built field while anchor lines fill.
-		adoptLine(cachedLine(start, new Point(x, y)), new Point(x, y));
+		}
+		var previousRequest = plans.foreground;
+		var requested = plans.request(start);
+		routeLine = cachedLine(start, new Point(x, y));
+		lineOrigin = new Point(x, y);
+		appliedPlan = null;
+		// Losing the local tangent requests a new plan; it does not invalidate
+		// the displayed plan's geometry. Keep that complete visual until the
+		// replacement is ready. Floor/goal/geometry changes clear it separately.
+		if (previousRequest != requested)
+			stats.event("replacement-pending", {x: x, y: y, retainedVisualPoints: visualRoute.length});
 		return followLine(x, y);
+	}
+
+	function adoptCompleted(line:Array<Point>):Bool {
+		if (line == null || line.length < 2)
+			return false;
+		var previous = routeLine;
+		routeLine = line;
+		if (followLine(heroX, heroY) == null) {
+			routeLine = previous;
+			return false;
+		}
+		appliedPlan = line;
+		visualRoute = line;
+		lineOrigin = null;
+		return true;
+	}
+
+	public function cacheSnapshot():Dynamic {
+		return plans == null ? {limit: routeLimit, retainedPoints: 0, tiles: []} : plans.snapshot(heroX, heroY);
 	}
 
 	function cachedLine(start:Int, origin:Point):Array<Point> {
@@ -710,160 +644,6 @@ class WalkGrid {
 		return compactLine(raw);
 	}
 
-	function adoptLine(line:Array<Point>, origin:Point):Void {
-		routeLine = line;
-		lineOrigin = origin;
-		startRefinement(line, roomAtCell(focusCell));
-	}
-
-	function startRefinement(line:Array<Point>, room:Tile):Void {
-		cancelRefinement();
-		refineRoom = room;
-		if (visualRemaining(visualRoute) < 0)
-			visualRoute = [];
-		for (cached in curveCache) {
-			if (cached.source == line || cached.rounded == line) {
-				routeLine = cached.rounded;
-				visualRoute = cached.rounded;
-				return;
-			}
-		}
-		if (line == null || line.length < 3 || room == null) {
-			if (line != null && line.length == 2)
-				visualRoute = line;
-			return;
-		}
-		refineSource = line;
-		refineResult = [line[0]];
-		curveLine = refineResult;
-		curveResult = [line[0]];
-		curveAt = 1;
-		shortcutsComplete = false;
-		nextVisualPublish = 0;
-		refineAt = 0;
-		refineCandidate = Std.int(Math.min(line.length - 1, 3));
-	}
-
-	function cancelRefinement():Void {
-		refineSource = null;
-		refineResult = null;
-		refineRoom = null;
-		curveLine = null;
-		curveResult = null;
-		curveAt = 0;
-	}
-
-	// One short candidate per frame; no scan of all distant route endpoints.
-	// The source remains visible until the entire replacement is validated.
-	function refineStep():Bool {
-		if (curveLine != null && (curveAt < curveLine.length - 1 || shortcutsComplete))
-			return curveStep();
-		var source = refineSource;
-		var at = source[refineAt];
-		var candidate = source[refineCandidate];
-		var accept = refineCandidate == refineAt + 1;
-		if (!accept && Point.distance(at, candidate) <= 400) {
-			cachedQueries = true;
-			accept = corridorClear(at.x, at.y, candidate) && hazardFree(at.x, at.y, candidate);
-			cachedQueries = false;
-		}
-		if (!accept) {
-			refineCandidate--;
-			return false;
-		}
-		refineResult.push(candidate);
-		refineAt = refineCandidate;
-		if (refineAt >= source.length - 1) {
-			shortcutsComplete = true;
-			return false;
-		}
-
-		refineCandidate = Std.int(Math.min(source.length - 1, refineAt + 3));
-		return false;
-	}
-
-	// At most one corner per update. Cache the finished curve; no smoothing
-	// or collision tests run again until the underlying route changes.
-	function curveStep():Bool {
-		if (curveAt >= curveLine.length - 1) {
-			if (!shortcutsComplete)
-				return false;
-			curveResult.push(curveLine[curveLine.length - 1]);
-			if (routeLine == refineSource) {
-				if (curveCache.length >= 8)
-					curveCache.shift();
-				curveCache.push({source: refineSource, rounded: curveResult});
-				routeLine = curveResult;
-				visualRoute = curveResult;
-			}
-			refineSource = null;
-			refineResult = null;
-			curveLine = null;
-			curveResult = null;
-			return true;
-		}
-		var a = curveLine[curveAt - 1];
-		var b = curveLine[curveAt];
-		var c = curveLine[curveAt + 1];
-		curveAt++;
-		var key = a.x + ":" + a.y + ":" + b.x + ":" + b.y + ":" + c.x + ":" + c.y + ":" + lowPower;
-		var cached = cornerCache.get(key);
-		if (cached != null) {
-			if (cached.length == 0)
-				curveResult.push(b);
-			else
-				for (point in cached)
-					curveResult.push(point);
-			publishVisualPrefix();
-			return false;
-		}
-
-		var ab = Point.distance(a, b);
-		var bc = Point.distance(b, c);
-		var radius = Math.min(60, Math.min(ab, bc) * 0.25);
-		if (radius < 2) {
-			curveResult.push(b);
-			publishVisualPrefix();
-			return false;
-		}
-		var enter = new Point(b.x + (a.x - b.x) * radius / ab, b.y + (a.y - b.y) * radius / ab);
-		var leave = new Point(b.x + (c.x - b.x) * radius / bc, b.y + (c.y - b.y) * radius / bc);
-		var arc = [enter];
-		var samples = lowPower ? 4 : 8;
-		for (i in 1...samples + 1) {
-			var t = i / samples;
-			var u = 1 - t;
-			arc.push(new Point(u * u * enter.x + 2 * u * t * b.x + t * t * leave.x, u * u * enter.y + 2 * u * t * b.y + t * t * leave.y));
-		}
-		// The connector to enter is a subset of an already validated straight
-		// segment. Only the newly rounded arc needs fresh bounded checks.
-		var previous = enter;
-		var safe = true;
-		cachedQueries = true;
-		for (i in 1...arc.length) {
-			var point = arc[i];
-			if (!corridorClear(previous.x, previous.y, point) || !hazardFree(previous.x, previous.y, point)) {
-				safe = false;
-				break;
-			}
-			previous = point;
-		}
-		cachedQueries = false;
-		if (cornerKeys.length >= (lowPower ? 32 : 128))
-			cornerCache.remove(cornerKeys.shift());
-		cornerKeys.push(key);
-		cornerCache.set(key, safe ? arc : []);
-		if (safe) {
-			for (point in arc)
-				curveResult.push(point);
-		} else
-			curveResult.push(b);
-		publishVisualPrefix();
-		return false;
-	}
-
-	// A previous curved route is a handoff buffer, valid only near the player
-	// and within the same immutable geometry generation.
 	function visualRemaining(line:Array<Point>):Float {
 		if (line == null || line.length < 2 || focusCell < 0 || focusCell >= cells.length)
 			return -1;
@@ -890,22 +670,6 @@ class WalkGrid {
 			tail += length;
 		}
 		return best <= 95 * 95 ? remaining : -1;
-	}
-
-	function publishVisualPrefix():Void {
-		var now = openfl.Lib.getTimer();
-		if (curveResult.length < 2 || (visualRoute.length > 0 && now < nextVisualPublish))
-			return;
-		var previous = visualRemaining(visualRoute);
-		var next = visualRemaining(curveResult);
-		// Do not replace a usable line with a tiny prefix hidden by the
-		// player-distance fade, or one the player would immediately outrun.
-		if (previous >= 250 && next < Math.min(previous, 2300))
-			return;
-		if (next < 600)
-			return;
-		visualRoute = curveResult.copy();
-		nextVisualPublish = now + 100;
 	}
 
 	// Only merge collinear validated grid edges. This inexpensive first pass
@@ -969,13 +733,22 @@ class WalkGrid {
 		if (segment < 0 || best > 95)
 			return null;
 		var remaining = 192.;
+		var headingRemaining = COMPASS_LOOKAHEAD;
+		var headingFound = false;
+		var headingPoint = projection;
 		var from = projection;
 		var target = routeLine[segment + 1];
 		for (i in segment + 1...routeLine.length) {
 			var p = routeLine[i];
 			var distance = Point.distance(from, p);
-			if (distance > 0.001)
-				routeDirection = new Point((p.x - from.x) / distance * 100, (p.y - from.y) / distance * 100);
+			if (!headingFound && distance > 0.001) {
+				var portion = Math.min(distance, headingRemaining) / distance;
+				headingPoint = new Point(from.x + (p.x - from.x) * portion, from.y + (p.y - from.y) * portion);
+				if (distance >= headingRemaining)
+					headingFound = true;
+				else
+					headingRemaining -= distance;
+			}
 			if (distance >= remaining) {
 				target = new Point(from.x + (p.x - from.x) * remaining / distance, from.y + (p.y - from.y) * remaining / distance);
 				break;
@@ -989,6 +762,25 @@ class WalkGrid {
 			target = routeLine[segment + 1];
 		if (!clearGridLine(x, y, target) && segment != routeLine.length - 2)
 			return null;
+		// Publish a chord across the short forward arc only after the route
+		// passes validation. Rejected candidates must not change the heading
+		// belonging to the still-active route.
+		var hx = headingPoint.x - projection.x;
+		var hy = headingPoint.y - projection.y;
+		var span = Math.sqrt(hx * hx + hy * hy);
+		if (span > 0.5) {
+			var nextDirection = new Point(hx / span * 100, hy / span * 100);
+			if (routeDirection.x * nextDirection.x + routeDirection.y * nextDirection.y < -5000)
+				stats.event("sharp-heading-turn", {
+					x: x,
+					y: y,
+					fromX: routeDirection.x,
+					fromY: routeDirection.y,
+					toX: nextDirection.x,
+					toY: nextDirection.y
+				});
+			routeDirection = nextDirection;
+		}
 		return target;
 	}
 

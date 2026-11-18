@@ -1,0 +1,1 @@
+package box2D.collision.shapes;class B2CircleShape{public var center:Dynamic={x:0.,y:0.};public var radius=1.;public function new(){}public function GetLocalPosition():Dynamic{return center;}public function GetRadius():Float{return radius;}}

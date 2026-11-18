@@ -1,0 +1,1 @@
+package openfl.text;class TextFieldAutoSize{public static var NONE="none";}

@@ -1,0 +1,1 @@
+package mods.api.dungeon;class Hero{public var id:UInt=1;public var x=0.;public var y=0.;public var owner=false;public var local=false;public function new(){}}

@@ -1,0 +1,1 @@
+package starling.display;class Sprite extends openfl.display.Sprite{public var touchable=true;public function dispose():Void{}public function removeFromParent(dispose=false):Void{if(parent!=null)parent.removeChild(this);if(dispose)this.dispose();}}

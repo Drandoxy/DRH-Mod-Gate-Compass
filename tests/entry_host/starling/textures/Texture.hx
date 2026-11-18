@@ -1,0 +1,1 @@
+package starling.textures;class Texture{public function new(){}public static function fromBitmapData(b:openfl.display.BitmapData,m:Bool):Texture{return new Texture();}public function dispose():Void{}}

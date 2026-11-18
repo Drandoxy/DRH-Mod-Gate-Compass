@@ -1,0 +1,1 @@
+package mods.api.dungeon;class Floor{public var id:UInt=1;public var tiles:Array<Tile>=[];public function new(){}}

@@ -5,6 +5,10 @@ import openfl.geom.Point;
 class RouteVisibility {
 	public static inline final START_DISTANCE = 135.; // User-selected distance ahead of the character.
 
+	public static function startDistance(requested:Float, length:Float):Float {
+		return Math.max(0, Math.min(requested, Math.min(500, length - 50)));
+	}
+
 	public static function mask(points:Array<Point>, worldX:Float, worldY:Float, minimum:Float, maximum:Float):Array<Bool> {
 		if (points == null || points.length < 2)
 			return [];

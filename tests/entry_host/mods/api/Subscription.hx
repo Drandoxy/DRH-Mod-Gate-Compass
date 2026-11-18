@@ -1,0 +1,1 @@
+package mods.api;class Subscription{public function new(){}public function cancel():Void{}}

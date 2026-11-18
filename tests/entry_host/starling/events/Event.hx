@@ -1,0 +1,1 @@
+package starling.events;class Event{public static var ENTER_FRAME="enterFrame";}

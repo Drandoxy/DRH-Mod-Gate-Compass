@@ -1,0 +1,1 @@
+package starling.display;class Quad extends Sprite{public var color:UInt;public function new(w:Float,h:Float,c:UInt){super();width=w;height=h;color=c;}}

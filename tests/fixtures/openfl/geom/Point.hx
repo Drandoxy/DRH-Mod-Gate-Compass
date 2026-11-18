@@ -1,0 +1,1 @@
+package openfl.geom;class Point{public var x:Float;public var y:Float;public function equals(p:Point):Bool{return x==p.x&&y==p.y;}public function clone():Point{return new Point(x,y);}public static function distance(a:Point,b:Point):Float{return Math.sqrt((a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y));}public function new(x=0.,y=0.){this.x=x;this.y=y;}}

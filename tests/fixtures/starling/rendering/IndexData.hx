@@ -1,0 +1,1 @@
+package starling.rendering;class IndexData{public var indices:Array<Int>=[];public function new(){}public function clear():Void{indices=[];}public function addTriangle(a:Int,b:Int,c:Int):Void{indices.push(a);indices.push(b);indices.push(c);}}

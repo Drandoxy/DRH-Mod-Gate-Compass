@@ -1,0 +1,1 @@
+package brain.starling;class StarlingLayer extends starling.display.Sprite{public function new(i:Int,n:String,b:String,c:Bool,d:Dynamic,e:Bool){super();}}

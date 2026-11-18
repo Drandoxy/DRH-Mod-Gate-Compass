@@ -1,0 +1,1 @@
+package distributedObjects;class DistributedDungeonFloor{public var box2DWorld:World;public var remoteActors:Dynamic;public function new(){box2DWorld=new World();}}class World {public var first:box2D.dynamics.Body;public function new(){}public function GetBodyList():box2D.dynamics.Body{return first;}public function RayCastAll(a:Dynamic,b:Dynamic):Array<Dynamic>{return [];}}

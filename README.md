@@ -1,49 +1,42 @@
 # Gate Compass
 
 <!-- drh:show -->
-Gate Compass helps you find the dungeon gate with compass directions and an optional path on the ground.
+Gate Compass points toward the dungeon gate with optional 2D, ground and Pathfinder guides.
 
-## Choose your guides
+## Guides
 
-Turn each guide on or off independently. You can use any combination, including all three together.
+- **2D Compass**: a golden compass you can drag and resize.
+- **3D Compass**: a ground ring and direction triangle, coloured for the dungeon theme.
+- **Pathfinder**: a lavender path with collision-checked curves and fading ends.
 
-- **2D Compass** - a flat golden compass you can drag and resize.
-- **3D Compass** - a ground ring and direction triangle around your character. Its color adjusts to the dungeon theme to stay visible.
-- **Pathfinder line** - a lavender route toward the gate, with rounded corners and fading ends.
+Enable each independently. Both compasses sample the route 15 world units ahead of your hero, even when the line is hidden. Guidance accounts for walls, permanent obstacles and traps, while ignoring breakable props. Supported boss-only rooms show **Defeat the boss**.
 
-Both compasses follow the same route as Pathfinder, even when the line is hidden. Guidance accounts for walls, permanent obstacles, and traps; breakable objects are ignored. Inside the exit room, it points toward the gate. In supported boss-only rooms, the 2D compass displays **Defeat the boss**.
+## Settings
 
-## Make it yours
+Open **MODS > Gate Compass > Settings**, or press **Ctrl + Shift + G**.
 
-Open **MODS > Gate Compass > Settings**, or press **Ctrl + Shift + G**, to open the floating settings panel.
+- Adjust circle/arrow sizes, stroke widths and arrow distance.
+- **Line length**: 300–2,200 world units; default 2,200.
+- **Line start distance**: 0–500 world units from your hero; default 135. It is capped below line length so a section remains visible. This does not change the compass's hidden 15-unit direction average.
+- **Routes per tile**: 10–81 cached alternatives; default 36. Fewer alternatives reduce background preparation and memory. This is different from how many paths are drawn simultaneously.
+- **Smooth Compass** gives smooth turns; turn it off for immediate direction changes.
+- **Reset** restores defaults. Settings, positions and sizes save automatically.
 
-- Choose which guides to display.
-- Adjust the ground circle size, arrow size, circle width, Pathfinder width, and arrow distance from the ring.
-- Leave **Smooth Compass** on for quick, smooth turns of about **0.3 seconds**, or turn it off for instant direction changes.
-- Adjust **Line length** from **300 to 2,200 world units** ahead along the route (default **2,200**).
-- Use **Reset** to restore the defaults.
+Move the settings panel by its title bar; its bottom-right corner resizes it. **Ctrl + Shift + Q** toggles navigation and releases its caches when off.
 
-Drag the panel by its title bar. Hover over its bottom-right corner to reveal the resize handle. Your appearance settings, positions, and sizes save automatically.
+## Capacity test
 
-Press **Ctrl + Shift + Q** to turn Gate Compass on or off. You can change this shortcut under **Compass Toggle** in the game's controls settings.
+Click **Test capacity** in a dungeon. Confirm the instructions, then stand still in a safe place on the map you want to test.
 
-## Reduced Effects
+The countdown runs for **8 seconds from the first test line's calculation**, after any wait for map data. Temporary paths increase through **1, 4, 8, 16 and 32 additional lines** around your hero. The test compares frame times with its baseline. Moving, opening a menu, leaving, Cancel or repeated very slow frames stops the test and removes its graphics.
 
-**Recommended for lower-end devices; off by default.** This option reduces glow, removes the Pathfinder endpoint fade, and refreshes the visible path section less often while you move. Rounded ends remain, and routing and compass turning work the same way. The line still renders normally between visibility updates.
+Results show a provisional route-count recommendation and the drawing-load result separately. **Yes** applies the recommended route count; **No** keeps your settings. A warm cache may provide too few new route samples, in which case your current count is retained. This is a workload estimate for this map, not a hardware rating or a guarantee for every floor.
 
-## Low power mode
+## Lower-power options
 
-Enable **Low power mode** for slower devices, especially with fast movement. It also enables the lighter visual treatment of Reduced Effects. Guidance updates about 30 times per second, tile changes trigger fresh targets, and fast movement bypasses the slower line-mask throttle. The compass animation and world position still follow the game render loop.
+**Reduced Effects** reduces glow, removes endpoint fading and updates the visible path section less often. **Low power mode** also uses smaller work budgets/caches and updates guidance around 30 times per second. Both retain the original 12-sample curves. Shorter or narrower lines reduce drawing work; width does not increase path-search nodes.
 
-Low power mode skips extra room-anchor preparation, uses smaller cooperative search slices, and keeps refinement local. Normal mode prepares at most six rough alternatives in the current room, resuming that room if you return. Finished curved sections extend as local work completes, including while you move. Rounded corners are collision-checked incrementally and cached; unsafe corners retain their original shape. Normal mode uses eight curve samples per corner, and low-power mode uses four. This preserves weighted trap avoidance; it does not switch to an unvalidated room-center shortcut.
-
-For less GPU work, shorten **Line length** or disable the ground compass while keeping the 2D compass. Wider lines cover more pixels but do not add path-search nodes. Avoid excessive width and glow on slower GPUs.
-
-## While you play
-
-The shared route field is prepared in short cooperative steps. The arrows can use a validated rough route immediately. The drawn line appears in finished curved sections, so it does not flash a jagged preview while refinement runs. Unfinished refinement stops when you leave its tile. Only a local route prefix is turned into line geometry, and it refreshes as you move. The guides and route preparation pause behind exit, revive, Settings, and results menus.
-
-Turning off a guide releases its drawing resources while the others continue working. Turning all three off stops navigation work and clears its caches and graphics; the settings controls remain available. Leaving a match releases its navigation resources too.
+Geometry and route work resume in short steps. Completed routes are cached across room changes, and only a nearby section becomes drawing geometry. A valid line stays until its replacement is ready. Navigation pauses behind game menus and releases its resources when all guides are off or you leave.
 <!-- /drh:show -->
 
 ## In-game previews
@@ -65,6 +58,40 @@ Use **DRH Launcher** to install Gate Compass when available in its mod catalogue
 
 Requires **Dungeon Rampage Haxe 18** and **Mod API 1.4 or later**, including API 1.5. Release history is available on the [Releases page](https://github.com/Drandoxy/DRH-Mod-Gate-Compass/releases).
 
-Validated corners are cached by their coordinates, not only by the identity of a route array. Overlapping route sections reuse those results until geometry changes. This extra cache holds at most 128 corners normally, or 32 in low-power mode.
+Completed full routes are cached until the geometry or destination changes. Normal mode retains at most 120,000 route points, and low power mode at most 30,000, with at most eight tiles' worth of entries. Returning to a cached route reuses its curve geometry.
 
-The line begins 135 world units ahead of the character. Replacement line meshes are prepared before the displayed meshes are released.
+The line starts at the selected distance (135 units by default), independently of the 15-unit hidden compass average. Replacement line meshes are prepared before the displayed meshes are released.
+
+
+## Local diagnostics
+
+Capacity tests run only after pressing **Test capacity** and confirming. No automatic per-floor test runs, including on development installations with an older `autoProfile` preference. Optional local diagnostics (`{"enabled":true}` in `local-diagnostics.json`) record only explicitly started tests; no data is uploaded.
+
+Offline regression checks are described in [tests/README.md](tests/README.md). Native game compilation, graphics and device performance require an in-game test.
+
+
+## Calculation details
+
+Both modes retain the original collision-checked, 12-sample rounded corners. Route extraction, visibility tests and curve validation resume across short slices instead of completing an entire route in one update. Completed routes stay cached as you cross rooms. Alternative preparation focuses on the current room, up to your selected route count; least-recently-used entries are evicted under a bounded cache. Low power mode uses a smaller work budget and point cache.
+
+These are cooperative budgets, not a hard CPU limit: an individual native collision query can exceed its time slice. The capacity estimate is provisional, not a hardware benchmark or guarantee of frame rate.
+
+A mostly completed cache may provide too few new routes for a recommendation; try a fresh floor.
+
+
+Startup first scans nearby gate approaches and uses a fixed Manhattan heuristic toward the initial hero position, then finishes the shared field. Missing edge answers needed by the first curved route are checked on demand and cached, so line validation need not wait for the entire field. A full gate-approach scan remains available if local approaches cannot reach the hero. Diagnostics distinguish initial-search delay, first mesh time, geometry updates and mesh construction.
+
+
+The first line now prepares a bounded 2,800-unit section with the same 12-sample, collision-checked curve algorithm before processing the full route. Foreground work has priority over optional field completion within the existing per-update budget. Initial search can use the full budget while no foreground route is ready. Diagnostics record the first compass direction separately from the first mesh.
+
+
+## Geometry and calibration updates
+
+Collision snapshotting, signature comparison, grid initialization, shape rasterization and clearance propagation are resumable. A completed grid is published atomically; unchanged geometry reuses the previous grid. Clearance propagation visits walkable cells instead of flooding empty areas. Destination-field arrays are initialized incrementally too.
+
+Theme tinting uses a native bitmap colour matrix matching the previous cyan/white pigment formula, rather than Haxe pixel loops. Reduced-effects alpha cutoff uses a bitmap threshold operation. The old broad geometry timer also included theme-artwork generation, so previous peak timings were not exclusively grid costs.
+
+Calibration now examines recurring slice tails and average per-frame mod work, excluding separately measured geometry/mesh preparation. It preserves a compatible selected cache count rather than interpreting full-route preparation time as a per-frame limit. Manual tests start on their first actual route-job step, and only an explicitly confirmed manual test creates stress-test graphics. Automatic per-floor profiling has been removed. Drawing records include phase counts, baseline/phase mean and 95th-percentile frame times, sample counts and cancellation information.
+
+
+Compass direction averages the next15 world units of route, reducing short-segment jitter. A rejected candidate cannot change the heading of the still-active route. Sharp turns are included in local diagnostics for further native investigation.

@@ -1,0 +1,1 @@
+package dBGlobals;class DBGlobal{public static var TEAM_3=3;public static var B2D_ENVIRONMENT_MASK=1;public static var B2D_COMBAT_MASK=2;}

@@ -12,6 +12,10 @@ class CompassTools extends Sprite {
 	var flags:Array<CompassOption<Bool>> = [];
 	var popupHeight = 365.;
 	var ctx:Context;
+
+	public var onMeasure:Void->Void;
+
+	var measurementStatus:TextField;
 	var commit:Void->Void;
 	var controls:Array<CompassControl>;
 	var popup = new Sprite();
@@ -35,7 +39,8 @@ class CompassTools extends Sprite {
 		this.controls = controls;
 		if (flags != null)
 			this.flags = flags;
-		popupHeight = 115 + this.flags.length * 36 + controls.length * 50;
+		var settingsEnd = 54 + this.flags.length * 30 + controls.length * 42;
+		popupHeight = settingsEnd + 136;
 		grip(popupGrip, popup, 304, popupHeight - 16);
 		popup.graphics.beginFill(0x17271D, .98);
 		popup.graphics.lineStyle(2, 0x69865A);
@@ -82,7 +87,7 @@ class CompassTools extends Sprite {
 		caption.mouseEnabled = false;
 		reset.addChild(caption);
 		reset.x = 20;
-		reset.y = 66 + this.flags.length * 36 + controls.length * 50;
+		reset.y = settingsEnd + 26;
 		reset.buttonMode = true;
 		reset.addEventListener(MouseEvent.CLICK, resetDefaults);
 		popup.addChild(reset);
@@ -105,7 +110,7 @@ class CompassTools extends Sprite {
 			row.addChild(toggle);
 			switches.push(toggle);
 			row.x = 20;
-			row.y = 54 + i * 36;
+			row.y = 54 + i * 30;
 			row.buttonMode = true;
 			row.addEventListener(MouseEvent.CLICK, function(e) {
 				e.stopPropagation();
@@ -119,12 +124,12 @@ class CompassTools extends Sprite {
 		for (i in 0...controls.length) {
 			var text = label("", 14);
 			text.x = 20;
-			text.y = 57 + this.flags.length * 36 + i * 50;
+			text.y = 54 + this.flags.length * 30 + i * 42;
 			labels.push(text);
 			popup.addChild(text);
 			var track = new Sprite();
 			track.x = 20;
-			track.y = 88 + this.flags.length * 36 + i * 50;
+			track.y = 80 + this.flags.length * 30 + i * 42;
 			track.buttonMode = true;
 			tracks.push(track);
 			popup.addChild(track);
@@ -135,6 +140,38 @@ class CompassTools extends Sprite {
 				slide(e);
 			});
 		}
+		var hint = label("Lagging? Reduce routes per tile.", 12);
+		hint.x = 20;
+		hint.y = settingsEnd;
+		hint.width = 280;
+		popup.addChild(hint);
+		var measure = new Sprite();
+		measure.graphics.beginFill(0x236D2B);
+		measure.graphics.drawRoundRect(0, 0, 164, 30, 10, 10);
+		measure.graphics.endFill();
+		var measureLabel = label("Test capacity", 13);
+		measureLabel.x = 14;
+		measureLabel.y = 5;
+		measureLabel.width = 150;
+		measureLabel.mouseEnabled = false;
+		measure.addChild(measureLabel);
+		measure.x = 136;
+		measure.y = settingsEnd + 26;
+		measure.buttonMode = true;
+		measure.addEventListener(MouseEvent.CLICK, function(e) {
+			e.stopPropagation();
+			if (onMeasure != null)
+				onMeasure();
+		});
+		popup.addChild(measure);
+		measurementStatus = label("8-second capacity test. Stand safely still.", 12);
+		measurementStatus.x = 20;
+		measurementStatus.y = settingsEnd + 64;
+		measurementStatus.width = 280;
+		measurementStatus.height = 64;
+		measurementStatus.wordWrap = true;
+		popup.addChild(measurementStatus);
+
 		popup.setChildIndex(popupGrip, popup.numChildren - 1);
 		popup.addEventListener(MouseEvent.MOUSE_DOWN, block);
 		popup.x = 44;
@@ -142,6 +179,11 @@ class CompassTools extends Sprite {
 		addChild(popup);
 		refresh();
 		defaultLayout();
+	}
+
+	public function setMeasurementStatus(value:String):Void {
+		if (measurementStatus != null && measurementStatus.text != value)
+			measurementStatus.text = value;
 	}
 
 	function label(text:String, size:Int):TextField {
@@ -167,7 +209,7 @@ class CompassTools extends Sprite {
 	function defaultLayout():Void {
 		x = 0;
 		y = 0;
-		popup.scaleX = popup.scaleY = 1;
+		popup.scaleX = popup.scaleY = Math.min(1, Math.max(.5, (ctx.viewHeight - 24) / popupHeight));
 		popup.x = Math.max(0, (ctx.viewWidth - 320) / 2);
 		popup.y = Math.max(0, (ctx.viewHeight - popupHeight) / 2);
 		clampPopup();
@@ -364,6 +406,7 @@ class CompassTools extends Sprite {
 	}
 
 	public function destroy():Void {
+		onMeasure = null;
 		finish(null);
 		popup.removeEventListener(MouseEvent.MOUSE_DOWN, block);
 		if (parent != null)

@@ -1,0 +1,1 @@
+package distributedObjects;class NPCGameObject{public var gmNpc:Dynamic;public var isProp=false;public var isNavigable=false;public var team=0;public function new(){}}

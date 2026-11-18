@@ -1,0 +1,1 @@
+package distributedObjects;class HeroGameObject{public var heroView:actor.ActorView;}

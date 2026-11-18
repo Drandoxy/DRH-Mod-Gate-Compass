@@ -1,0 +1,1 @@
+package actor;class ActorView{public var root:starling.display.Sprite;public var body:starling.display.Sprite;}

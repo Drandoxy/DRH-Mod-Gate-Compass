@@ -1,0 +1,1 @@
+package mods.api.dungeon;class Tile{public static var SIZE=100;public var id:String;public var x:Int;public var y:Int;public var category="EXIT_TILE";public var exits:Array<Int>=[];public function new(id:String,x:Int,y:Int){this.id=id;this.x=x;this.y=y;}public function contains(x:Float,y:Float):Bool{return x>=this.x&&y>=this.y&&x<this.x+SIZE&&y<this.y+SIZE;}}

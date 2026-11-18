@@ -1,0 +1,1 @@
+package modding;typedef ModSubscription=mods.api.Subscription;

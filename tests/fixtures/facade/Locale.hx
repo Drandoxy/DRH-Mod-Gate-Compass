@@ -1,0 +1,1 @@
+package facade;class Locale{public static function getError(code:Int):String{return "Error "+code;}}

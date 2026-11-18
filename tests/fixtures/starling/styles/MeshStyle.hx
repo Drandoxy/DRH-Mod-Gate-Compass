@@ -1,0 +1,1 @@
+package starling.styles;class MeshStyle{public static var VERTEX_FORMAT="test";public function new(){}}
