@@ -18,7 +18,7 @@ class PanelChecks {
   if(controls[5].option.value!=2200||controls[4].option.value!=0||controls[6].option.value!=135)throw "reset lost control defaults";
   var reset:openfl.display.Sprite=cast panel.popup.getChildByName("reset");
   if(panel.popupHeight-reset.y-38!=24||reset.y-panel.tracks[6].y<30)throw "reset padding missing";
-  if(panel.closeButton.x+19!=460||panel.closeButton.y+19!=4)throw "close no longer centred at board corner";
+  if(panel.closeButton.x+19!=454||panel.closeButton.y+19!=8)throw "close no longer centred at board corner";
   for(i in 0...reset.numChildren) {
    var child=reset.getChildAt(i);
    if(Std.isOfType(child,openfl.text.TextField)) {

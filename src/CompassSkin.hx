@@ -83,6 +83,26 @@ class CompassSkin {
 		});
 	}
 
+	public function textStyle(field:openfl.text.TextField, size:Int, color:UInt, title:Bool = false, centered:Bool = false, ?ready:Void->Void):Void {
+		schedule(function() {
+			var popup = symbol("popup");
+			if (popup == null)
+				return;
+			var source = popup.getChildByName(title ? "title_label" : "message_label");
+			if (!Std.isOfType(source, openfl.text.TextField))
+				return;
+			var nativeLabel:openfl.text.TextField = cast source;
+			var format = new openfl.text.TextFormat(nativeLabel.defaultTextFormat.font, size, color, false);
+			format.align = centered ? openfl.text.TextFormatAlign.CENTER : openfl.text.TextFormatAlign.LEFT;
+			field.embedFonts = nativeLabel.embedFonts;
+			field.defaultTextFormat = format;
+			field.setTextFormat(format);
+			field.filters = [new openfl.filters.GlowFilter(0x330000, 1, 3, 3, 3)];
+			if (ready != null)
+				ready();
+		});
+	}
+
 	/** Same authored title ribbon as the Party Time town notifications. */
 	public function banner(parent:Sprite, title:String, width:Float):Void {
 		var ribbon = new Sprite();
@@ -91,10 +111,10 @@ class CompassSkin {
 		parent.addChild(ribbon);
 		var caption = new openfl.text.TextField();
 		caption.defaultTextFormat = new openfl.text.TextFormat("_sans", 24, 0xFFD900, true);
-		caption.width = width - 64;
+		caption.width = width * .7;
 		caption.height = 38;
-		caption.x = 32;
-		caption.y = -20;
+		caption.x = width * .15;
+		caption.y = -21;
 		caption.text = title.toUpperCase();
 		var format = caption.defaultTextFormat;
 		format.align = openfl.text.TextFormatAlign.CENTER;
@@ -102,15 +122,23 @@ class CompassSkin {
 		caption.setTextFormat(format);
 		caption.mouseEnabled = false;
 		parent.addChild(caption);
+		textStyle(caption, 24, 0xFFD900, true, true, function() {
+			caption.y = -21;
+		});
 		schedule(function() {
 			var popup = symbol("popup");
 			if (popup == null)
 				return;
 			var art = popup.getChildByName("banner_title_label");
 			if (art != null) {
-				fit(art, width - 56, 56);
-				art.x += 28;
-				art.y -= 28;
+				// Preserve the authored registration point, exactly as Records.
+				art.scaleX = art.scaleY = 1;
+				if (art.width > 0 && art.height > 0) {
+					art.scaleX = width * .7 / art.width;
+					art.scaleY = 1.3;
+				}
+				art.x = width / 2;
+				art.y = -4;
 				ribbon.addChild(art);
 			}
 		});

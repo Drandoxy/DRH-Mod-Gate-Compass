@@ -61,8 +61,8 @@ class CompassTools extends Sprite {
 		header.addEventListener(MouseEvent.MOUSE_DOWN, drag);
 		popup.addChild(header);
 		skin.closeButton(closeButton, 38);
-		closeButton.x = PANEL_WIDTH - 19;
-		closeButton.y = -15;
+		closeButton.x = PANEL_WIDTH - 6 - 19;
+		closeButton.y = 8 - 19;
 		closeButton.addEventListener(MouseEvent.CLICK, close);
 		popup.addChild(closeButton);
 		var reset = new Sprite();
@@ -137,7 +137,7 @@ class CompassTools extends Sprite {
 	}
 
 	function buttonCaption(parent:Sprite, text:String, w:Float = BUTTON_WIDTH, h:Float = BUTTON_HEIGHT, size:Int = 15):TextField {
-		var caption = label(text, size);
+		var caption = label(text.toUpperCase(), size);
 		caption.width = w;
 		caption.height = h;
 		caption.autoSize = openfl.text.TextFieldAutoSize.NONE;
@@ -146,6 +146,9 @@ class CompassTools extends Sprite {
 		caption.defaultTextFormat = format;
 		caption.setTextFormat(format);
 		caption.y = (h - caption.textHeight) / 2 - 2;
+		skin.textStyle(caption, size, 0xFFFFFF, true, true, function() {
+			caption.y = (h - caption.textHeight) / 2 - 2;
+		});
 		caption.mouseEnabled = false;
 		parent.addChild(caption);
 		return caption;
@@ -158,6 +161,7 @@ class CompassTools extends Sprite {
 		t.height = 27;
 		t.selectable = false;
 		t.text = text;
+		skin.textStyle(t, size, 0xF2F8EF);
 		return t;
 	}
 
