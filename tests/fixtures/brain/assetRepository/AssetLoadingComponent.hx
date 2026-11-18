@@ -1,0 +1,1 @@
+package brain.assetRepository;class AssetLoadingComponent { public static var callbacks:Array<SwfAsset->Void>=[]; public function new(f:Dynamic) {} public function getSwfAsset(path:String,cb:SwfAsset->Void):Void {callbacks.push(cb);} public function destroy():Void {} }

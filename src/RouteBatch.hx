@@ -42,8 +42,11 @@ class RouteBatch {
 		mesh.touchable = false;
 	}
 
-	public function show(mask:Array<Bool>):Void {
-		var same = mask.length == previousMask.length;
+	var previousOpenStart = false;
+	var previousOpenEnd = false;
+
+	public function show(mask:Array<Bool>, openStart:Bool = false, openEnd:Bool = false):Void {
+		var same = mask.length == previousMask.length && openStart == previousOpenStart && openEnd == previousOpenEnd;
 		if (same)
 			for (i in 0...mask.length)
 				if (mask[i] != previousMask[i]) {
@@ -55,6 +58,14 @@ class RouteBatch {
 		for (i in 0...mask.length)
 			previousMask[i] = mask[i];
 		previousMask.resize(mask.length);
+		previousOpenStart = openStart;
+		previousOpenEnd = openEnd;
+		var first = 0;
+		while (first < mask.length && !mask[first])
+			first++;
+		var last = mask.length - 1;
+		while (last >= 0 && !mask[last])
+			last--;
 		indices.clear();
 		active.clear();
 		var distance = 0.;
@@ -62,6 +73,8 @@ class RouteBatch {
 			for (i in 0...mask.length) {
 				if (!mask[i])
 					distance = 0;
+				if (openStart && i == first)
+					distance = 25;
 				starts[i] = distance;
 				if (mask[i])
 					distance += lengths == null ? 5 : lengths[i];
@@ -72,6 +85,8 @@ class RouteBatch {
 				var i = n - 1 - k;
 				if (!mask[i])
 					distance = 0;
+				if (openEnd && i == last)
+					distance = 25;
 				ends[i] = distance;
 				if (mask[i])
 					distance += lengths == null ? 5 : lengths[i];
@@ -92,7 +107,7 @@ class RouteBatch {
 							continue;
 					} else {
 						var edge = side == 0 ? (i == 0 || !mask[i - 1]) : (i == mask.length - 1 || !mask[i + 1]);
-						if (!edge)
+						if (!edge || (side == 0 ? openStart && i == first : openEnd && i == last))
 							continue;
 					}
 					var fade = 1.;

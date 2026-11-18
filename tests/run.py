@@ -12,10 +12,12 @@ with tempfile.TemporaryDirectory(prefix="compass-checks-") as directory:
     runtime = Path(directory)
     shutil.copytree(root / "tests" / "fixtures", runtime, dirs_exist_ok=True)
     shutil.copytree(root / "src", runtime / "mods" / "gate_compass")
-    for name in ("CompassChecks", "GeometryChecks", "PaletteChecks", "HeadingChecks", "PanelChecks", "PlannerChecks", "StartupChecks", "MeasurementChecks", "CalibrationChecks", "RenderUiChecks", "VisibilityChecks", "PauseChecks"):
+    for name in ("ClockChecks", "CompassChecks", "GeometryChecks", "PaletteChecks", "HeadingChecks", "ProbeChecks", "PanelChecks", "SkinChecks", "HoverChecks", "VisibilityChecks", "PauseChecks"):
         subprocess.run([args.haxe, "-cp", str(runtime), "-main", name, "--interp"], check=True)
 
     shutil.copytree(root / "tests" / "entry_host", runtime, dirs_exist_ok=True)
     subprocess.run([args.haxe, "-cp", str(runtime), "-main", "EntryTypeChecks", "--no-output"], check=True)
     print("PASS: full mod entry and rendering/UI source type-check against host adapters", flush=True)
-    subprocess.run([args.haxe, "-cp", str(runtime), "-main", "CapacityFlowChecks", "--interp"], check=True)
+
+    subprocess.run([args.haxe, "-cp", str(runtime), "-main", "HeadingFlowChecks", "--interp"], check=True)
+    subprocess.run([args.haxe, "-cp", str(runtime), "-main", "RouteHeadChecks", "--interp"], check=True)

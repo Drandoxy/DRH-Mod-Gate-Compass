@@ -7,9 +7,6 @@ class NavigationStats {
 	static final SLICE_BOUNDS = [.25, .5, 1., 2., 4., 8., 16., 32., 64., 128.];
 
 	public var sliceHistogram:Array<Int> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-	public var firstWork:WorkBaseline;
-	public var manualWork:WorkBaseline;
-	public var manualSerial = 0;
 	public var initialSearchStarted = -1.;
 	public var firstPlanDelayMs = -1.;
 	public var firstCompassDelayMs = -1.;
@@ -37,22 +34,8 @@ class NavigationStats {
 	public var swaps = 0;
 	public var rejectedSwaps = 0;
 	public var zeroMasks = 0;
-	public var measurementStarted = -1.;
 
 	public function new() {}
-
-	public function beginWork(manual:Bool):Void {
-		if (firstWork == null) {
-			firstWork = new WorkBaseline(this);
-			measurementStarted = firstWork.time;
-			if (initialSearchStarted >= 0)
-				firstPlanDelayMs = (measurementStarted - initialSearchStarted) * 1000;
-		}
-		if (manual) {
-			manualWork = new WorkBaseline(this);
-			manualSerial++;
-		}
-	}
 
 	public function slice(ms:Float, budget:Float, count:Int):Void {
 		var bounds = SLICE_BOUNDS;
@@ -85,7 +68,7 @@ class NavigationStats {
 	public function snapshot():Dynamic {
 		return {
 			requests: requests,
-			build: "0.2.24",
+			build: "0.2.38",
 			firstCompassDelayMs: firstCompassDelayMs,
 			firstPlanDelayMs: firstPlanDelayMs,
 			firstMeshDelayMs: firstMeshDelayMs,

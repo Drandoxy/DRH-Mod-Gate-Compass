@@ -167,7 +167,7 @@ class FloatingCompass extends Sprite {
 			return;
 
 		var delta = (heading - needle.rotation + 540) % 360 - 180;
-		needle.rotation += smooth ? delta * (1 - Math.exp(-elapsed / 75.)) : delta;
+		needle.rotation += smooth ? delta * (1 - Math.exp(-elapsed / (Math.abs(delta) > 117 ? 18. : 28.))) : delta;
 	}
 
 	public function resetHeading():Void {

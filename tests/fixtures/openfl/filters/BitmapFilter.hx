@@ -1,0 +1,1 @@
+package openfl.filters;typedef BitmapFilter=Dynamic;

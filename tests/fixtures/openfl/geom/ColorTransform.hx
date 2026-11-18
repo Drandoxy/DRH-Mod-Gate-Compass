@@ -1,0 +1,1 @@
+package openfl.geom;class ColorTransform {public function new(r=1.,g=1.,b=1.,a=1.,ro=0.,go=0.,bo=0.,ao=0.){}}

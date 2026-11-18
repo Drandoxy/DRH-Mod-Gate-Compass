@@ -1,0 +1,1 @@
+package brain.assetRepository;class SwfAsset { public function new() {} public function getClass(name:String):Dynamic {return name;} }

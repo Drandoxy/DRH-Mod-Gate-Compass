@@ -18,15 +18,6 @@ import openfl.geom.Point;
 
 class Main extends Mod {
 	var ctx:Context;
-	var measurement:FloorMeasurement;
-	var capacityDialog:CapacityDialog;
-	var capacityHud:CapacityHud;
-	var lineBenchmark:LineBenchmark;
-	var testRequested = false;
-	var testFloor:UInt = 0;
-	var testOrigin:Point;
-	var testWaitingSince = 0.;
-	var lastFrameStamp = 0.;
 	var lastLayer:String;
 	var lastLayerDepth = -1;
 	var menuPaused = false;
@@ -77,24 +68,34 @@ class Main extends Mod {
 
 	override public function init(context:Context):Void {
 		ctx = context;
-		measurement = new FloorMeasurement(ctx.data);
 		preferences = new CompassPreferences(context.data);
+		var lowPower = preferences.flag("lowPower", false);
+		var legacyEffects = preferences.flag("reducedEffects", false);
+		if (legacyEffects.value) {
+			lowPower.value = true;
+			legacyEffects.value = false;
+			preferences.flush();
+		}
 		displayFlags = [
 			preferences.flag("show2D", false),
 			preferences.flag("show3D", true),
 			preferences.flag("showPathfinder", true),
 			preferences.flag("smoothCompass", true),
-			preferences.flag("reducedEffects", false),
-			preferences.flag("lowPower", false)
+			lowPower,
+			lowPower
 		];
 		appearanceSubscriptions.push(context.settings.button("openCompassSettings", "Compass settings", "Settings").onPress(openTools));
 		appearanceSubscriptions.push(context.keys.action("openCompassPanel", "Open compass settings", "Open the live compass settings panel.", Keyboard.G,
 			true, true)
 			.onPress(openTools));
-		for (flag in displayFlags)
+		for (index in 0...displayFlags.length) {
+			if (index == 4)
+				continue;
+			var flag = displayFlags[index];
 			appearanceSubscriptions.push(flag.onChange(function(_) {
 				updateDisplays();
 			}));
+		}
 		updateDisplays();
 		var circle = preferences.slider("circleScaleV3", 1, 0.5, 4);
 		var arrow = preferences.slider("arrowScale", 1, 0.5, 3);
@@ -102,7 +103,6 @@ class Main extends Mod {
 		var stroke = preferences.slider("circleStrokeV2", 1, 0.25, 3);
 		var offset = preferences.slider("arrowOffsetV2", 0, -20, 100);
 		var length = preferences.slider("pathfinderLength", 2200, 300, 2200);
-		var routeCount = preferences.slider("routesPerTile", 36, 10, 81);
 		var lineStart = preferences.slider("lineStartDistance", 135, 0, 500);
 		controls = [
 			new CompassControl("Circle size", circle, 0.5, 4),
@@ -111,7 +111,6 @@ class Main extends Mod {
 			new CompassControl("Circle width", stroke, 0.25, 3),
 			new CompassControl("Arrow distance", offset, -20, 100, 0),
 			new CompassControl("Line length", length, 300, 2200, 2200, 50),
-			new CompassControl("Routes per tile", routeCount, 10, 81, 36, 1),
 			new CompassControl("Line start distance", lineStart, 0, 500, 135, 5)
 		];
 		for (control in controls)
@@ -138,15 +137,13 @@ class Main extends Mod {
 
 	function applyAppearance():Void {
 		preferences.flush();
-		if (panel == null || controls.length < 8)
+		if (panel == null || controls.length < 7)
 			return;
 		// Normalized multipliers: 1x matches the approved appearance baseline.
 		panel.configure(controls[0].option.value, controls[1].option.value, controls[2].option.value * 1.8, controls[3].option.value * 2,
 			controls[4].option.value);
 		panel.setLineLength(controls[5].option.value);
-		panel.setLineStart(controls[7].option.value);
-		if (grid != null)
-			grid.routeLimit = Std.int(controls[6].option.value);
+		panel.setLineStart(controls[6].option.value);
 		appearanceDirty = 0;
 	}
 
@@ -225,169 +222,17 @@ class Main extends Mod {
 	}
 
 	function openTools():Void {
-		if (testRequested)
-			stopCapacityTest("Compass settings opened.", true);
 		if (tools == null) {
-			tools = new CompassTools(ctx, controls, displayFlags, preferences.flush);
-			tools.onMeasure = measureCapacity;
+			tools = new CompassTools(ctx, controls, [
+				displayFlags[0],
+				displayFlags[1],
+				displayFlags[2],
+				displayFlags[3],
+				displayFlags[5]
+			], applyAppearance);
 			ctx.overlay.addChild(tools);
 		}
-		tools.setMeasurementStatus(measurement.status);
 		tools.setShown(true);
-	}
-
-	function showCapacityDialog(title:String, message:String, yes:Void->Void, no:Void->Void):Void {
-		if (capacityDialog != null)
-			capacityDialog.destroy();
-		capacityDialog = new CapacityDialog(ctx, title, message, yes == null ? null : function() {
-			capacityDialog = null;
-			yes();
-		}, function() {
-			capacityDialog = null;
-			if (no != null)
-				no();
-		});
-		ctx.overlay.addChild(capacityDialog);
-	}
-
-	function canTest():Bool {
-		return grid != null
-			&& panel != null
-			&& floorId != 0
-			&& hero != null
-			&& ctx.state.floor != null
-			&& ctx.core.facade.mainStateMachine.currentStateName == "RunState";
-	}
-
-	function measureCapacity():Void {
-		if (testRequested)
-			return;
-		if (!canTest()) {
-			measurement.status = "This test works only in a dungeon with a compass guide enabled.";
-			showCapacityDialog("Compass test", measurement.status, null, null);
-			return;
-		}
-		showCapacityDialog("Compass capacity test",
-			"Stand still in a safe place on the map you want to check.\n\nThe test takes 8 seconds after its first line starts calculating. It gradually draws up to 32 additional test lines and measures frame times.\n\nMovement, opening a menu or leaving cancels it. Start the test?",
-			beginCapacityTest, null);
-	}
-
-	function beginCapacityTest():Void {
-		if (!canTest() || menuPaused) {
-			showCapacityDialog("Compass test", "Close game menus and stand in a safe part of a dungeon before testing.", null, null);
-			return;
-		}
-		if (tools != null)
-			tools.setShown(false);
-		testRequested = true;
-		testFloor = floorId;
-		testOrigin = new Point(hero.x, hero.y);
-		testWaitingSince = haxe.Timer.stamp();
-		measurement.start(grid, hero.x, hero.y);
-		capacityHud = new CapacityHud(ctx, function() {
-			stopCapacityTest("Test cancelled.", true);
-		});
-		ctx.overlay.addChild(capacityHud);
-		capacityHud.show("Waiting for the first test line...");
-	}
-
-	function clearCapacityGraphics():Void {
-		if (lineBenchmark != null)
-			lineBenchmark.destroy();
-		lineBenchmark = null;
-		if (capacityHud != null)
-			capacityHud.destroy();
-		capacityHud = null;
-		testRequested = false;
-		testOrigin = null;
-		if (grid != null)
-			grid.cancelMeasurement();
-	}
-
-	function stopCapacityTest(reason:String, show:Bool):Void {
-		if (!testRequested)
-			return;
-		if (lineBenchmark != null) {
-			var partial:Dynamic = lineBenchmark.trial.result();
-			partial.stopped = reason;
-			partial.completed = false;
-			measurement.logDrawing(partial);
-		}
-		clearCapacityGraphics();
-		measurement.cancelManual(reason);
-		if (show)
-			showCapacityDialog("Compass test stopped", reason + " Stand in a safe place and try again.", null, null);
-	}
-
-	function tickCapacityTest(now:Float, frameMs:Float):Void {
-		if (!testRequested)
-			return;
-		if (!canTest() || floorId != testFloor) {
-			stopCapacityTest("The dungeon changed.", false);
-			return;
-		}
-		if (menuPaused) {
-			stopCapacityTest("A game menu opened.", true);
-			return;
-		}
-		if (Point.distance(testOrigin, new Point(hero.x, hero.y)) > 40) {
-			stopCapacityTest("You moved during the test.", true);
-			return;
-		}
-		if (lineBenchmark == null) {
-			if (measurement.manualStarted < 0) {
-				if (now - testWaitingSince > 30)
-					stopCapacityTest("No route calculation became ready.", true);
-				return;
-			}
-			lineBenchmark = new LineBenchmark(measurement.manualStarted, controls[2].option.value * 1.8,
-				controls[5].option.value, displayFlags[4].value || displayFlags[5].value);
-			panel.addChild(lineBenchmark);
-		}
-		lineBenchmark.tick(now, frameMs);
-		capacityHud.show(Math.ceil(lineBenchmark.trial.remaining(now) * 10) / 10 + " s left | " + lineBenchmark.count + " test lines");
-		if (!lineBenchmark.trial.done)
-			return;
-		var result:Dynamic = lineBenchmark.trial.result();
-		var recommendation = measurement.manualAdvice > 0 ? measurement.manualAdvice : grid.routeLimit;
-		var note = measurement.manualNote;
-		result.routeRecommendation = recommendation;
-		result.recommendationNote = note;
-		result.preparationWaitSeconds = Math.max(0, measurement.manualStarted - testWaitingSince);
-		result.hero = {x: hero.x, y: hero.y};
-		result.style = {
-			widthMultiplier: controls[2].option.value * 1.8,
-			lineLength: controls[5].option.value,
-			reducedEffects: displayFlags[4].value || displayFlags[5].value};
-		clearCapacityGraphics();
-		measurement.logDrawing(result);
-		if (result.stopped != "") {
-			measurement.cancelManual(result.stopped);
-			showCapacityDialog("Compass test stopped", result.stopped, null, null);
-			return;
-		}
-		measurement.finishManual("Recommended: " + recommendation + " routes per tile. " + note);
-		var drawing = "Drawing: too few stable frames for an estimate.";
-		if (result.valid) {
-			var fps = 0.;
-			for (row in (cast result.phases : Array<Dynamic>))
-				if (row.lines == result.stableAdditionalLines)
-					fps = row.fps;
-			drawing = "Drawing: " + result.stableAdditionalLines + " extra test lines stable.\nBaseline " + Math.round(result.baseline.fps)
-				+ " FPS; tested " + Math.round(fps) + " FPS.";
-		}
-		var message = "Recommended: "
-			+ recommendation
-			+ " cached routes per tile.\n"
-			+ (note.indexOf("Limited") >= 0 ? "Limited route sample; kept the current count.\n" : "")
-			+ drawing
-			+ "\n\nResults apply to this floor. Cached routes differ from simultaneously visible lines.\n\nDo you want to apply recommended settings?";
-		showCapacityDialog("Compass test results", message, function() {
-			controls[6].option.value = recommendation;
-			preferences.flush();
-			applyAppearance();
-			measurement.status = "Applied: " + recommendation + " routes per tile.";
-		}, null);
 	}
 
 	function startMatchResources():Void {
@@ -400,9 +245,8 @@ class Main extends Mod {
 		panel.setThemeColor(themeColor);
 		applyAppearance();
 		grid = new WalkGrid();
-		grid.routeLimit = Std.int(controls[6].option.value);
-		grid.stats.trace = measurement.localLogging;
 		panel.stats = grid.stats;
+		panel.routeGrid = grid;
 		grid.lowPower = displayFlags[5].value;
 		for (h in ctx.state.heroes)
 			trackHero(h);
@@ -426,18 +270,11 @@ class Main extends Mod {
 	}
 
 	function stopNavigation():Void {
-		stopCapacityTest("Navigation stopped.", false);
-		if (capacityDialog != null)
-			capacityDialog.destroy();
-		capacityDialog = null;
-		lastFrameStamp = 0;
 		ctx.overlay.removeEventListener(Event.ENTER_FRAME, update);
 		for (subscription in geometrySubscriptions)
 			subscription.cancel();
 		geometrySubscriptions = [];
 		if (grid != null) {
-			if (measurement != null)
-				measurement.suspend(grid);
 			grid.clear();
 		}
 		grid = null;
@@ -495,14 +332,10 @@ class Main extends Mod {
 		if (!listening || floor == null)
 			return;
 		floorId = floor.id;
-		measurement.enter(floorId);
 		startMatchResources();
 	}
 
 	function clearFloor():Void {
-		stopCapacityTest("The floor ended.", false);
-		if (measurement != null)
-			measurement.finish(grid);
 		for (subscription in geometrySubscriptions)
 			subscription.cancel();
 		geometrySubscriptions = [];
@@ -535,18 +368,7 @@ class Main extends Mod {
 	}
 
 	function update(event:Event):Void {
-		var started = haxe.Timer.stamp();
-		var frameMs = lastFrameStamp > 0 ? (started - lastFrameStamp) * 1000 : 0.;
-		lastFrameStamp = started;
 		updateNavigation(event);
-		if (grid != null) {
-			grid.stats.update((haxe.Timer.stamp() - started) * 1000);
-			var current = ctx.state.floor;
-			measurement.tick(grid, current == null ? 0 : current.tiles.length, hero == null ? 0 : hero.x, hero == null ? 0 : hero.y);
-			if (tools != null)
-				tools.setMeasurementStatus(measurement.status);
-		}
-		tickCapacityTest(haxe.Timer.stamp(), frameMs);
 	}
 
 	function updateNavigation(event:Event):Void {
@@ -602,8 +424,7 @@ class Main extends Mod {
 		nextUpdate = now + (displayFlags[5].value ? 33 : 16);
 		if (hasDisplay && hero != null) {
 			grid.prioritize(hero.x, hero.y);
-			var atExit = goal != null && goal.contains(hero.x, hero.y);
-			if (grid.advanceField(!atExit)) {
+			if (grid.advanceField()) {
 				nextSearch = 0;
 				lastCell = -1;
 			}
@@ -670,20 +491,20 @@ class Main extends Mod {
 		var room = grid.roomAtCell(cell);
 		var enteredRoom = room != null && room != lastSearchRoom;
 		var region = grid.regionAt(x, y);
-		var enteredRegion = region != "" && region != lastRegion;
 		var movedWhileIdle = waypoint == null && (Math.abs(x - lastSearchX) >= 8 || Math.abs(y - lastSearchY) >= 8);
+		// Resample the cached route while moving, including within one cell.
 		// The normal cooldown still applies to movement inside a room.
 		// A doorway crossing gets a fresh target immediately.
-		if (enteredRoom
-			|| enteredRegion
-			|| (now >= nextSearch && (cell != lastCell || movedWhileIdle || nearWaypoint || waypoint == null))) {
-			if (enteredRoom || enteredRegion)
+		var urgentSearch = RouteClock.urgent(x - lastSearchX, y - lastSearchY, nearWaypoint, enteredRoom);
+		if (urgentSearch
+			|| (now >= nextSearch && (movedSinceSearch || cell != lastCell || movedWhileIdle || nearWaypoint || waypoint == null))) {
+			if (enteredRoom)
 				grid.invalidateRoute();
 			lastRegion = region;
 			lastSearchRoom = room;
 			lastSearchX = x;
 			lastSearchY = y;
-			nextSearch = now + (displayFlags[5].value ? 100 : 80);
+			nextSearch = now + RouteClock.interval(displayFlags[5].value);
 			lastCell = cell;
 			waypoint = grid.waypoint(x, y, goal, gate, gateId);
 			if (waypoint == null)
@@ -728,6 +549,8 @@ class Main extends Mod {
 	function refreshGeometry(floor:DistributedDungeonFloor, now:Int):Bool {
 		var current = ctx.state.floor;
 		if (current == null || current.id != floorId || floor.box2DWorld == null)
+			return false;
+		if (!geometryDirty && tileLayout != "" && (startupRefresh <= 0 || now < startupRefresh))
 			return false;
 		var oldGoal = goal;
 		var oldGate = gate;

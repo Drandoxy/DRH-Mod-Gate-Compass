@@ -8,14 +8,22 @@ import openfl.text.TextFormat;
 import openfl.geom.Point;
 
 class CompassTools extends Sprite {
+	static inline final PANEL_WIDTH = 460.;
+	static inline final PADDING = 24.;
+	static inline final TRACK_WIDTH = PANEL_WIDTH - PADDING * 2;
+	static inline final SLIDER_WIDTH = TRACK_WIDTH - 16;
+	static inline final TOGGLE_WIDTH = 72.;
+	static inline final TOGGLE_HEIGHT = 26.;
+	static inline final BUTTON_WIDTH = (TRACK_WIDTH - 16) / 2;
+	static inline final BUTTON_HEIGHT = 38.;
+
+	var skin:CompassSkin;
 	var switches:Array<Sprite> = [];
+	var switchLabels:Array<TextField> = [];
 	var flags:Array<CompassOption<Bool>> = [];
 	var popupHeight = 365.;
 	var ctx:Context;
 
-	public var onMeasure:Void->Void;
-
-	var measurementStatus:TextField;
 	var commit:Void->Void;
 	var controls:Array<CompassControl>;
 	var popup = new Sprite();
@@ -35,59 +43,34 @@ class CompassTools extends Sprite {
 	public function new(ctx:Context, controls:Array<CompassControl>, ?flags:Array<CompassOption<Bool>>, ?commit:Void->Void) {
 		super();
 		this.ctx = ctx;
+		skin = new CompassSkin(ctx);
 		this.commit = commit;
 		this.controls = controls;
 		if (flags != null)
 			this.flags = flags;
-		var settingsEnd = 54 + this.flags.length * 30 + controls.length * 42;
-		popupHeight = settingsEnd + 136;
-		grip(popupGrip, popup, 304, popupHeight - 16);
-		popup.graphics.beginFill(0x17271D, .98);
-		popup.graphics.lineStyle(2, 0x69865A);
-		popup.graphics.drawRoundRect(0, 0, 320, popupHeight, 18, 18);
-		popup.graphics.endFill();
+		var settingsEnd = 70 + this.flags.length * 30 + controls.length * 46;
+		popupHeight = settingsEnd + 82;
+		grip(popupGrip, popup, PANEL_WIDTH - 16, popupHeight - 16);
+		skin.board(popup, PANEL_WIDTH, popupHeight);
 		var header = new Sprite();
 		header.graphics.beginFill(0, 0);
-		header.graphics.drawRect(0, 0, 278, 48);
+		header.graphics.drawRect(0, 0, PANEL_WIDTH - 70, 48);
 		header.graphics.endFill();
-		var title = label("Compass settings", 17);
-		title.x = 20;
-		title.y = 14;
-		title.mouseEnabled = false;
-		header.addChild(title);
+		skin.banner(header, "Compass settings", PANEL_WIDTH);
 		header.buttonMode = true;
 		header.addEventListener(MouseEvent.MOUSE_DOWN, drag);
 		popup.addChild(header);
-		closeButton.graphics.beginFill(0x314D37);
-		closeButton.graphics.drawRoundRect(0, 0, 28, 28, 8, 8);
-		closeButton.graphics.endFill();
-		closeButton.graphics.lineStyle(2, 0xFFFFFF);
-		closeButton.graphics.moveTo(8, 8);
-		closeButton.graphics.lineTo(20, 20);
-		closeButton.graphics.moveTo(20, 8);
-		closeButton.graphics.lineTo(8, 20);
-		closeButton.x = 276;
-		closeButton.y = 12;
-		closeButton.buttonMode = true;
+		skin.closeButton(closeButton, 38);
+		closeButton.x = PANEL_WIDTH - 19;
+		closeButton.y = -15;
 		closeButton.addEventListener(MouseEvent.CLICK, close);
 		popup.addChild(closeButton);
 		var reset = new Sprite();
-		reset.graphics.beginFill(0x236D2B);
-		reset.graphics.drawRoundRect(0, 0, 104, 30, 10, 10);
-		reset.graphics.endFill();
-		var caption = label("Reset", 14);
-		caption.width = 104;
-		caption.height = 24;
-		caption.x = 0;
-		caption.y = 6;
-		caption.autoSize = openfl.text.TextFieldAutoSize.NONE;
-		var resetFormat = new TextFormat("_sans", 14, 0xFFFFFF, true);
-		resetFormat.align = openfl.text.TextFormatAlign.CENTER;
-		caption.setTextFormat(resetFormat);
-		caption.mouseEnabled = false;
-		reset.addChild(caption);
-		reset.x = 20;
-		reset.y = settingsEnd + 26;
+		reset.name = "reset";
+		skin.button(reset, BUTTON_WIDTH, BUTTON_HEIGHT);
+		buttonCaption(reset, "Reset");
+		reset.x = PADDING;
+		reset.y = settingsEnd + 20;
 		reset.buttonMode = true;
 		reset.addEventListener(MouseEvent.CLICK, resetDefaults);
 		popup.addChild(reset);
@@ -96,21 +79,24 @@ class CompassTools extends Sprite {
 			"Enable 3D Compass",
 			"Enable Pathfinder line",
 			"Smooth Compass",
-			"Reduced Effects",
 			"Low power mode"
 		];
 		for (i in 0...this.flags.length) {
 			var row = new Sprite();
 			var name = label(names[i], 14);
 			name.mouseEnabled = false;
+			name.width = TRACK_WIDTH - TOGGLE_WIDTH - 16;
 			row.addChild(name);
 			var toggle = new Sprite();
-			toggle.x = 236;
+			toggle.x = TRACK_WIDTH - TOGGLE_WIDTH;
+			skin.button(toggle, TOGGLE_WIDTH, TOGGLE_HEIGHT);
+			var toggleLabel = buttonCaption(toggle, "", TOGGLE_WIDTH, TOGGLE_HEIGHT, 12);
+			switchLabels.push(toggleLabel);
 			toggle.y = 0;
 			row.addChild(toggle);
 			switches.push(toggle);
-			row.x = 20;
-			row.y = 54 + i * 30;
+			row.x = PADDING;
+			row.y = 70 + i * 30;
 			row.buttonMode = true;
 			row.addEventListener(MouseEvent.CLICK, function(e) {
 				e.stopPropagation();
@@ -123,13 +109,13 @@ class CompassTools extends Sprite {
 		}
 		for (i in 0...controls.length) {
 			var text = label("", 14);
-			text.x = 20;
-			text.y = 54 + this.flags.length * 30 + i * 42;
+			text.x = PADDING;
+			text.y = 70 + this.flags.length * 30 + i * 46;
 			labels.push(text);
 			popup.addChild(text);
 			var track = new Sprite();
-			track.x = 20;
-			track.y = 80 + this.flags.length * 30 + i * 42;
+			track.x = PADDING + 8;
+			track.y = 102 + this.flags.length * 30 + i * 46;
 			track.buttonMode = true;
 			tracks.push(track);
 			popup.addChild(track);
@@ -140,37 +126,6 @@ class CompassTools extends Sprite {
 				slide(e);
 			});
 		}
-		var hint = label("Lagging? Reduce routes per tile.", 12);
-		hint.x = 20;
-		hint.y = settingsEnd;
-		hint.width = 280;
-		popup.addChild(hint);
-		var measure = new Sprite();
-		measure.graphics.beginFill(0x236D2B);
-		measure.graphics.drawRoundRect(0, 0, 164, 30, 10, 10);
-		measure.graphics.endFill();
-		var measureLabel = label("Test capacity", 13);
-		measureLabel.x = 14;
-		measureLabel.y = 5;
-		measureLabel.width = 150;
-		measureLabel.mouseEnabled = false;
-		measure.addChild(measureLabel);
-		measure.x = 136;
-		measure.y = settingsEnd + 26;
-		measure.buttonMode = true;
-		measure.addEventListener(MouseEvent.CLICK, function(e) {
-			e.stopPropagation();
-			if (onMeasure != null)
-				onMeasure();
-		});
-		popup.addChild(measure);
-		measurementStatus = label("8-second capacity test. Stand safely still.", 12);
-		measurementStatus.x = 20;
-		measurementStatus.y = settingsEnd + 64;
-		measurementStatus.width = 280;
-		measurementStatus.height = 64;
-		measurementStatus.wordWrap = true;
-		popup.addChild(measurementStatus);
 
 		popup.setChildIndex(popupGrip, popup.numChildren - 1);
 		popup.addEventListener(MouseEvent.MOUSE_DOWN, block);
@@ -181,15 +136,25 @@ class CompassTools extends Sprite {
 		defaultLayout();
 	}
 
-	public function setMeasurementStatus(value:String):Void {
-		if (measurementStatus != null && measurementStatus.text != value)
-			measurementStatus.text = value;
+	function buttonCaption(parent:Sprite, text:String, w:Float = BUTTON_WIDTH, h:Float = BUTTON_HEIGHT, size:Int = 15):TextField {
+		var caption = label(text, size);
+		caption.width = w;
+		caption.height = h;
+		caption.autoSize = openfl.text.TextFieldAutoSize.NONE;
+		var format = new TextFormat("_sans", size, 0xFFFFFF, true);
+		format.align = openfl.text.TextFormatAlign.CENTER;
+		caption.defaultTextFormat = format;
+		caption.setTextFormat(format);
+		caption.y = (h - caption.textHeight) / 2 - 2;
+		caption.mouseEnabled = false;
+		parent.addChild(caption);
+		return caption;
 	}
 
 	function label(text:String, size:Int):TextField {
 		var t = new TextField();
 		t.defaultTextFormat = new TextFormat("_sans", size, 0xF2F8EF, true);
-		t.width = 300;
+		t.width = TRACK_WIDTH;
 		t.height = 27;
 		t.selectable = false;
 		t.text = text;
@@ -210,7 +175,7 @@ class CompassTools extends Sprite {
 		x = 0;
 		y = 0;
 		popup.scaleX = popup.scaleY = Math.min(1, Math.max(.5, (ctx.viewHeight - 24) / popupHeight));
-		popup.x = Math.max(0, (ctx.viewWidth - 320) / 2);
+		popup.x = Math.max(0, (ctx.viewWidth - PANEL_WIDTH) / 2);
 		popup.y = Math.max(0, (ctx.viewHeight - popupHeight) / 2);
 		clampPopup();
 	}
@@ -275,10 +240,10 @@ class CompassTools extends Sprite {
 	}
 
 	function clampPopup():Void {
-		var fit = Math.min(2, Math.min((ctx.viewWidth - 16) / 320, (ctx.viewHeight - 16) / popupHeight));
+		var fit = Math.min(2, Math.min((ctx.viewWidth - 16) / PANEL_WIDTH, (ctx.viewHeight - 16) / popupHeight));
 		if (fit > 0 && popup.scaleX > fit)
 			popup.scaleX = popup.scaleY = fit;
-		popup.x = Math.max(-x, Math.min(ctx.viewWidth - x - 320 * popup.scaleX, popup.x));
+		popup.x = Math.max(-x, Math.min(ctx.viewWidth - x - PANEL_WIDTH * popup.scaleX, popup.x));
 		popup.y = Math.max(-y, Math.min(ctx.viewHeight - y - popupHeight * popup.scaleY, popup.y));
 	}
 
@@ -306,13 +271,13 @@ class CompassTools extends Sprite {
 		}
 		if (moving) {
 			var at = globalToLocal(new Point(e.stageX, e.stageY));
-			popup.x = Math.max(-x, Math.min(ctx.viewWidth - x - 320 * popup.scaleX, at.x - offset.x));
+			popup.x = Math.max(-x, Math.min(ctx.viewWidth - x - PANEL_WIDTH * popup.scaleX, at.x - offset.x));
 			popup.y = Math.max(-y, Math.min(ctx.viewHeight - y - popupHeight * popup.scaleY, at.y - offset.y));
 		}
 		if (active >= 0) {
 			var p = tracks[active].globalToLocal(new Point(e.stageX, e.stageY));
 			var c = controls[active];
-			var value = c.minimum + Math.max(0, Math.min(1, p.x / 280)) * (c.maximum - c.minimum);
+			var value = c.minimum + Math.max(0, Math.min(1, p.x / SLIDER_WIDTH)) * (c.maximum - c.minimum);
 			c.option.value = Math.max(c.minimum, Math.min(c.maximum, Math.round(value / c.step) * c.step));
 			refresh();
 		}
@@ -331,14 +296,8 @@ class CompassTools extends Sprite {
 
 	function refresh():Void {
 		for (i in 0...switches.length) {
-			var g = switches[i].graphics;
-			g.clear();
-			g.beginFill(flags[i].value ? 0x43B750 : 0x526159);
-			g.drawRoundRect(0, 0, 44, 22, 22, 22);
-			g.endFill();
-			g.beginFill(0xFFFFFF);
-			g.drawCircle(flags[i].value ? 33 : 11, 11, 8);
-			g.endFill();
+			switchLabels[i].text = flags[i].value ? "ON" : "OFF";
+			switchLabels[i].y = (TOGGLE_HEIGHT - switchLabels[i].textHeight) / 2 - 2;
 		}
 		for (i in 0...controls.length) {
 			var c = controls[i];
@@ -346,13 +305,13 @@ class CompassTools extends Sprite {
 			var g = tracks[i].graphics;
 			g.clear();
 			g.beginFill(0, 0);
-			g.drawRect(-6, -12, 292, 24);
+			g.drawRect(-6, -12, SLIDER_WIDTH + 12, 24);
 			g.endFill();
-			g.lineStyle(6, 0x405347);
+			g.lineStyle(6, 0x3C210D);
 			g.moveTo(0, 0);
-			g.lineTo(280, 0);
-			var at = (c.option.value - c.minimum) / (c.maximum - c.minimum) * 280;
-			g.lineStyle(6, 0x72CE65);
+			g.lineTo(SLIDER_WIDTH, 0);
+			var at = (c.option.value - c.minimum) / (c.maximum - c.minimum) * SLIDER_WIDTH;
+			g.lineStyle(6, 0xFFCE54);
 			g.moveTo(0, 0);
 			g.lineTo(at, 0);
 			g.beginFill(0xFFFFFF);
@@ -406,7 +365,7 @@ class CompassTools extends Sprite {
 	}
 
 	public function destroy():Void {
-		onMeasure = null;
+		skin.destroy();
 		finish(null);
 		popup.removeEventListener(MouseEvent.MOUSE_DOWN, block);
 		if (parent != null)

@@ -1,0 +1,1 @@
+package brain.mouseCursor;class MouseCursorManager {public var pushes=0;public var pops=0;public function new(){}public function pushMouseCursor(n:String,t:Bool=false):UInt {pushes++;return pushes;}public function popMouseCursor(k:UInt):Void {pops++;}}

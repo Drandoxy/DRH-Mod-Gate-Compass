@@ -11,14 +11,19 @@ import mods.api.dungeon.Tile;
 import openfl.geom.Point;
 
 class WalkGrid {
+	var lastLineDistanceSquared = Math.POSITIVE_INFINITY;
+	var liveStart = -1;
+	var liveField:RouteField;
+
 	public var routeLine:Array<Point> = [];
 	public var visualRoute:Array<Point> = [];
 	public var lowPower = false;
 	public var routeDirection = new Point(1, 0);
+	public var steeringDistance = 0.;
 
-	public static inline final COMPASS_LOOKAHEAD = 15.;
+	public static inline final COMPASS_LOOKAHEAD = 96.;
+	static final STEERING_ARCS = [192., COMPASS_LOOKAHEAD, 48., 24., 12., 6., 3., 1.];
 
-	public var routeLimit = 36;
 	public var stats = new NavigationStats();
 
 	var geometryBuild:GeometryBuild;
@@ -27,12 +32,7 @@ class WalkGrid {
 	var desiredGoal:Tile;
 	var desiredGate:Point;
 	var desiredGateId:UInt = 0;
-	var measurementRequested = false;
-	var measurementSerial = 0;
 
-	var plans:RouteCache;
-	var planGrid:RouteGrid;
-	var appliedPlan:Array<Point>;
 	var heroX = 0.;
 	var heroY = 0.;
 
@@ -83,17 +83,6 @@ class WalkGrid {
 		});
 	}
 
-	public function requestMeasurement():Void {
-		measurementRequested = true;
-		measurementSerial = stats.manualSerial;
-	}
-
-	public function cancelMeasurement():Void {
-		measurementRequested = false;
-		if (plans != null)
-			plans.cancelTest();
-	}
-
 	public function geometryPending():Bool {
 		return geometryBuild != null;
 	}
@@ -113,7 +102,7 @@ class WalkGrid {
 		if (job.changed) {
 			field = null;
 			lineOrigin = null;
-			resetPlans();
+			resetLiveRoute();
 			routeLine = [];
 			visualRoute = [];
 			edgeChecks = new Map();
@@ -171,7 +160,6 @@ class WalkGrid {
 	}
 
 	public function clear():Void {
-		measurementRequested = false;
 		if (geometryBuild != null)
 			geometryBuild.cancel();
 		geometryBuild = null;
@@ -182,7 +170,7 @@ class WalkGrid {
 		desiredGateId = 0;
 		field = null;
 		lineOrigin = null;
-		resetPlans();
+		resetLiveRoute();
 		clearance = [];
 		shapeParts = [];
 		focusCell = -1;
@@ -222,10 +210,11 @@ class WalkGrid {
 	}
 
 	function blocksMovement(fixture:B2Fixture, ignoredGate:UInt = 0):Bool {
-		if (fixture.IsSensor() || !fixture.GetBody().IsActive())
+		var body = fixture.GetBody();
+		if (fixture.IsSensor() || !body.IsActive())
 			return false;
 		var bits = fixture.GetFilterData().categoryBits;
-		var data = fixture.GetBody().GetUserData();
+		var data = body.GetUserData();
 		if (ignoredGate != 0 && data == ignoredGate)
 			return false;
 		var npc = data == null || floor.remoteActors == null ? null : Std.downcast(floor.remoteActors.itemFor(data), NPCGameObject);
@@ -316,7 +305,7 @@ class WalkGrid {
 		routeLine = [];
 		visualRoute = [];
 		lineOrigin = null;
-		resetPlans();
+		resetLiveRoute();
 		focusAnnounced = false;
 		field = new RouteField(goal, gate, gateId, key, cells.length);
 		if (stats.initialSearchStarted < 0)
@@ -332,68 +321,19 @@ class WalkGrid {
 		focusCell = cellAt(x, y);
 	}
 
-	function resetPlans():Void {
-		if (plans != null)
-			plans.clear();
-		plans = null;
-		planGrid = null;
-		appliedPlan = null;
+	function resetLiveRoute():Void {
+		liveStart = -1;
+		liveField = null;
 	}
 
-	function ensurePlans():Void {
-		if (plans != null || field == null || cells.length == 0)
-			return;
-		planGrid = new RouteGrid(cells, hazards, rooms, nearCollider, edgeChecks, width, height, left, top, step);
-		planGrid.checkEdge = canCross;
-		plans = new RouteCache(planGrid, field.next, field.gate, stats);
-		plans.setLimit(routeLimit);
-		plans.lowPower = lowPower;
-	}
-
-	public function advanceField(allowWarmup:Bool = true):Bool {
+	public function advanceField():Bool {
 		var totalBudget = lowPower ? 0.6 : 1.5;
-		var geometryStarted = haxe.Timer.stamp();
-		var geometryChanged = advanceGeometry(cells.length == 0 ? totalBudget : totalBudget * .4);
-		var available = totalBudget - (haxe.Timer.stamp() - geometryStarted) * 1000;
-		if (field == null || available <= .02)
-			return geometryChanged;
-		ensurePlans();
-		if (plans == null)
-			return false;
-		plans.lowPower = lowPower;
-		plans.setLimit(routeLimit);
-		if (measurementRequested && stats.manualSerial > measurementSerial)
-			measurementRequested = false;
-		if (measurementRequested && !plans.hasTest() && focusCell >= 0 && field.settled[focusCell] && field.next[focusCell] >= 0)
-			plans.requestTest(focusCell);
-		var budget = available;
 		var started = haxe.Timer.stamp();
-		var changed = geometryChanged;
-		// The first validated curved section and pending foreground route use
-		// the existing budget before optional completion of the shared field.
-		if (plans.foregroundPending()) {
-			plans.advance(roomAtCell(focusCell), budget, false);
-		} else {
-			changed = advanceFieldWork(budget) || geometryChanged;
-			// A full-seed fallback can replace the field and its planner.
-			ensurePlans();
-			if (plans == null)
-				return changed;
-			var remaining = budget - (haxe.Timer.stamp() - started) * 1000;
-			if (remaining > 0.02)
-				plans.advance(roomAtCell(focusCell), remaining, allowWarmup);
-		}
-		planGrid.complete = field.phase == 2;
-		if (visualRoute.length < 2 && plans.preview != null && adoptCompleted(plans.preview))
-			changed = true;
-		var entry:RoutePlan = plans.foreground;
-		if (entry != null && entry.line != null && entry.line != appliedPlan) {
-			if (adoptCompleted(entry.line))
-				changed = true;
-			else if (focusCell >= 0)
-				plans.request(focusCell);
-		}
-		return changed;
+		var changed = advanceGeometry(cells.length == 0 ? totalBudget : totalBudget * .4);
+		var remaining = totalBudget - (haxe.Timer.stamp() - started) * 1000;
+		if (field == null || remaining <= .02)
+			return changed;
+		return advanceFieldWork(remaining) || changed;
 	}
 
 	function retryGateSeeds():Bool {
@@ -402,7 +342,7 @@ class WalkGrid {
 		var previous = field;
 		field = new RouteField(previous.goal, previous.gate, previous.gateId, previous.key, cells.length);
 		field.fullSeeds = true;
-		resetPlans();
+		resetLiveRoute();
 		focusAnnounced = false;
 		stats.event("full-gate-seed-retry", {});
 		return true;
@@ -529,13 +469,6 @@ class WalkGrid {
 			}
 			if (!focusAnnounced && current == focusCell) {
 				focusAnnounced = true;
-				if (routeLine.length < 2) {
-					routeLine = cachedLine(current, point(current));
-					lineOrigin = point(current);
-				}
-				ensurePlans();
-				plans.request(current);
-				// Prioritize the spawn-to-gate plan before room alternatives.
 				return true;
 			}
 		}
@@ -544,56 +477,123 @@ class WalkGrid {
 
 	public function waypoint(x:Float, y:Float, goal:Tile, gate:Point, gateId:UInt = 0):Point {
 		prepareField(goal, gate, gateId);
-		ensurePlans();
 		heroX = x;
 		heroY = y;
-		if (plans == null)
-			return null;
-		// Full completed plans survive tile crossings. Only cheap temporary
-		// arrow guidance needs recentring while a plan is still being built.
-		if (appliedPlan == null && lineOrigin != null && Point.distance(lineOrigin, new Point(x, y)) >= 900) {
-			var start = cellAt(x, y);
-			if (field != null && start >= 0 && field.settled[start] && field.next[start] >= 0) {
-				routeLine = cachedLine(start, new Point(x, y));
-				lineOrigin = new Point(x, y);
-			}
-		}
-		var existing = followLine(x, y);
-		if (existing != null)
-			return existing;
-		var currentRoom = roomAtCell(cellAt(x, y));
-		var alternatives = plans.alternatives(currentRoom);
-		alternatives.sort(function(a:RoutePlan, b:RoutePlan) {
-			var ap = planGrid.point(a.cell);
-			var bp = planGrid.point(b.cell);
-			var ad = (ap.x - x) * (ap.x - x) + (ap.y - y) * (ap.y - y);
-			var bd = (bp.x - x) * (bp.x - x) + (bp.y - y) * (bp.y - y);
-			return ad < bd ? -1 : ad > bd ? 1 : 0;
-		});
-		for (i in 0...Std.int(Math.min(4, alternatives.length))) {
-			var entry:RoutePlan = alternatives[i];
-			if (adoptCompleted(entry.line)) {
-				stats.hits++;
-				return followLine(x, y);
-			}
-		}
+		return field == null ? null : followLiveField(x, y);
+	}
+
+	function farFromRouteEnd(point:Point):Bool {
+		var end = routeLine[routeLine.length - 1];
+		var dx = point.x - end.x;
+		var dy = point.y - end.y;
+		return dx * dx + dy * dy > 600 * 600;
+	}
+
+	function followLiveField(x:Float, y:Float):Point {
 		var start = cellAt(x, y);
-		if (start < 0 || field == null || !field.settled[start] || field.next[start] < 0) {
-			if (start >= 0 && field != null && field.phase == 2)
-				retryGateSeeds();
-			return null;
+		if (start >= 0 && !walkable(start)) {
+			var closest = Math.POSITIVE_INFINITY;
+			var recovered = -1;
+			var col = start % width;
+			var row = Std.int(start / width);
+			for (dy in -2...3)
+				for (dx in -2...3) {
+					var candidate = index(col + dx, row + dy);
+					if (!walkable(candidate) || !field.settled[candidate])
+						continue;
+					var at = point(candidate);
+					var distance = Point.distance(new Point(x, y), at);
+					if (distance < closest && canAim(x, y, at)) {
+						closest = distance;
+						recovered = candidate;
+					}
+				}
+			start = recovered;
 		}
-		var previousRequest = plans.foreground;
-		var requested = plans.request(start);
-		routeLine = cachedLine(start, new Point(x, y));
-		lineOrigin = new Point(x, y);
-		appliedPlan = null;
-		// Losing the local tangent requests a new plan; it does not invalidate
-		// the displayed plan's geometry. Keep that complete visual until the
-		// replacement is ready. Floor/goal/geometry changes clear it separately.
-		if (previousRequest != requested)
-			stats.event("replacement-pending", {x: x, y: y, retainedVisualPoints: visualRoute.length});
+		var previous = liveField == field ? followLine(x, y) : null;
+		if (start < 0 || !field.settled[start] || field.next[start] < 0) {
+			if (start >= 0 && field.phase == 2)
+				retryGateSeeds();
+			return previous;
+		}
+		var lineDistance = previous == null ? Math.POSITIVE_INFINITY : lastLineDistanceSquared;
+		if (liveField == field && liveStart == start && previous != null && lineDistance < 12 * 12)
+			return previous;
+		// Keep the route ahead while its moving head can still connect nearby.
+		if (previous != null && lineDistance < 32 * 32 && farFromRouteEnd(previous))
+			return previous;
+		var origin = new Point(x, y);
+		var next = cachedLine(start, origin);
+		if (next.length < 2 || !steeringClear(x, y, next[1]))
+			return previous;
+		next = roundLiveCorners(shortenLiveLine(next));
+		if (!adoptCompleted(next))
+			return previous;
+		liveStart = start;
+		liveField = field;
 		return followLine(x, y);
+	}
+
+	function shortenLiveLine(line:Array<Point>):Array<Point> {
+		var result = [line[0]];
+		var from = 0;
+		for (_ in 0...24) {
+			if (from + 1 >= line.length)
+				break;
+			var to = from + 1;
+			var candidate = Std.int(Math.min(line.length - 1, from + 12));
+			while (candidate > to) {
+				var dx = line[from].x - line[candidate].x;
+				var dy = line[from].y - line[candidate].y;
+				if (dx * dx + dy * dy <= 600 * 600 && canConnectRouteHead(line[from], line[candidate])) {
+					to = candidate;
+					break;
+				}
+				candidate--;
+			}
+			result.push(line[to]);
+			from = to;
+		}
+		for (i in from + 1...line.length)
+			result.push(line[i]);
+		return result;
+	}
+
+	function roundLiveCorners(line:Array<Point>):Array<Point> {
+		var result = [line[0]];
+		for (i in 1...line.length - 1) {
+			var a = line[i - 1];
+			var b = line[i];
+			var c = line[i + 1];
+			var ab = Point.distance(a, b);
+			var bc = Point.distance(b, c);
+			var radius = Math.min(100., Math.min(ab, bc) * .4);
+			if (radius < 2 || i > 24) {
+				result.push(b);
+				continue;
+			}
+			var enter = new Point(b.x + (a.x - b.x) * radius / ab, b.y + (a.y - b.y) * radius / ab);
+			var leave = new Point(b.x + (c.x - b.x) * radius / bc, b.y + (c.y - b.y) * radius / bc);
+			var arc = [enter];
+			var safe = true;
+			for (sample in 1...9) {
+				var t = sample / 8.;
+				var u = 1 - t;
+				var point = new Point(u * u * enter.x + 2 * u * t * b.x + t * t * leave.x, u * u * enter.y + 2 * u * t * b.y + t * t * leave.y);
+				if (!canConnectRouteHead(arc[arc.length - 1], point)) {
+					safe = false;
+					break;
+				}
+				arc.push(point);
+			}
+			if (safe)
+				for (point in arc)
+					result.push(point);
+			else
+				result.push(b);
+		}
+		result.push(line[line.length - 1]);
+		return result;
 	}
 
 	function adoptCompleted(line:Array<Point>):Bool {
@@ -605,14 +605,27 @@ class WalkGrid {
 			routeLine = previous;
 			return false;
 		}
-		appliedPlan = line;
 		visualRoute = line;
 		lineOrigin = null;
 		return true;
 	}
 
-	public function cacheSnapshot():Dynamic {
-		return plans == null ? {limit: routeLimit, retainedPoints: 0, tiles: []} : plans.snapshot(heroX, heroY);
+	static function distanceSquaredToLine(line:Array<Point>, x:Float, y:Float):Float {
+		var best = Math.POSITIVE_INFINITY;
+		for (i in 0...line.length - 1) {
+			var a = line[i];
+			var b = line[i + 1];
+			var dx = b.x - a.x;
+			var dy = b.y - a.y;
+			var square = dx * dx + dy * dy;
+			var t = square == 0 ? 0. : Math.max(0., Math.min(1., ((x - a.x) * dx + (y - a.y) * dy) / square));
+			var ex = a.x + dx * t - x;
+			var ey = a.y + dy * t - y;
+			best = Math.min(best, ex * ex + ey * ey);
+			if (best == 0)
+				return 0;
+		}
+		return best;
 	}
 
 	function cachedLine(start:Int, origin:Point):Array<Point> {
@@ -641,6 +654,11 @@ class WalkGrid {
 		}
 		if (reached && field.gate != null)
 			raw.push(field.gate);
+		// The current cell centre can be behind the hero. Connect directly to
+		// the next field point when safe, rather than briefly guiding backwards
+		// until a completed curve replaces this temporary line.
+		if (raw.length >= 3 && canConnectRouteHead(origin, raw[2]))
+			raw.splice(1, 1);
 		return compactLine(raw);
 	}
 
@@ -698,18 +716,130 @@ class WalkGrid {
 		gentleOrigin = null;
 	}
 
+	public function canConnectRouteHead(from:Point, to:Point):Bool {
+		return walkable(cellAt(from.x, from.y)) && walkable(cellAt(to.x, to.y)) && hazardFree(from.x, from.y, to) && steeringClear(from.x, from.y, to);
+	}
+
 	function hazardFree(x:Float, y:Float, target:Point):Bool {
-		var count = Std.int(Math.ceil(Point.distance(new Point(x, y), target) / (step / 2)));
+		var dx = target.x - x;
+		var dy = target.y - y;
+		var count = Std.int(Math.ceil(Math.sqrt(dx * dx + dy * dy) / (step / 2)));
+		var previous = -2;
 		for (i in 0...count + 1) {
 			var t = count == 0 ? 0. : i / count;
-			var cell = cellAt(x + (target.x - x) * t, y + (target.y - y) * t);
+			var cell = cellAt(x + dx * t, y + dy * t);
+			if (cell == previous)
+				continue;
+			previous = cell;
 			if (cell >= 0 && hazards[cell])
 				return false;
 		}
 		return true;
 	}
 
+	function steeringClear(x:Float, y:Float, target:Point, ignoredGate:UInt = 0):Bool {
+		if (!clearGridLine(x, y, target)) {
+			// The hero can stand safely near a wall even when this coarse
+			// cell's centre is blocked. Permit only a short exact-tested exit.
+			return !walkable(cellAt(x, y))
+				&& walkable(cellAt(target.x, target.y))
+				&& (target.x
+					- x) * (target.x - x)
+					+ (target.y - y) * (target.y - y) <= step * step * 9
+						&& floor != null
+						&& floor.box2DWorld != null
+						&& exactSteeringChord(x, y, target, ignoredGate);
+		}
+		// Grid centres/edges cannot prove that an off-centre hero-to-target
+		// chord misses a wall inside a cell. Validate that actual chord too.
+		return cachedQueries || floor == null || floor.box2DWorld == null || exactSteeringChord(x, y, target, ignoredGate);
+	}
+
+	function forwardRoutePoint(segment:Int, projection:Point, ahead:Float):Point {
+		var from = projection;
+		for (i in segment + 1...routeLine.length) {
+			var to = routeLine[i];
+			var span = Point.distance(from, to);
+			if (span == 0)
+				continue;
+			if (span >= ahead && span > .001)
+				return new Point(from.x + (to.x - from.x) * ahead / span, from.y + (to.y - from.y) * ahead / span);
+			ahead -= span;
+			from = to;
+		}
+		return routeLine[routeLine.length - 1];
+	}
+
+	var chordKnown = false;
+	var chordX = 0.;
+	var chordY = 0.;
+	var chordTargetX = 0.;
+	var chordTargetY = 0.;
+	var chordGate:UInt = 0;
+	var chordClear = false;
+	var probingSteering = false;
+
+	function exactSteeringChord(x:Float, y:Float, target:Point, gate:UInt):Bool {
+		if (!probingSteering)
+			return canAim(x, y, target, gate);
+		if (chordKnown && chordX == x && chordY == y && chordTargetX == target.x && chordTargetY == target.y && chordGate == gate)
+			return chordClear;
+		chordClear = canAim(x, y, target, gate);
+		chordKnown = true;
+		chordX = x;
+		chordY = y;
+		chordTargetX = target.x;
+		chordTargetY = target.y;
+		chordGate = gate;
+		return chordClear;
+	}
+
 	function followLine(x:Float, y:Float):Point {
+		chordKnown = false;
+		probingSteering = true;
+		try {
+			var result = sampleLine(x, y);
+			probingSteering = false;
+			return result;
+		} catch (error:Dynamic) {
+			probingSteering = false;
+			throw error;
+		}
+	}
+
+	function furthestVisible(segment:Int, projection:Point, x:Float, y:Float):Point {
+		// Scan route vertices backwards: a corner can hide an earlier part
+		// while a later branch is visible again. Never assume monotonicity.
+		var first = segment + 1;
+		var limit = Std.int(Math.min(routeLine.length - 1, first + 64));
+		for (offset in 0...limit - first + 1) {
+			var i = limit - offset;
+			var candidate = routeLine[i];
+			var gate = i == routeLine.length - 1 ? routeGateId : 0;
+			if (!steeringClear(x, y, candidate, gate) || !hazardFree(x, y, candidate))
+				continue;
+			// Refine just beyond a visible corner while every tested chord
+			// remains clear. Keep the search bounded.
+			if (i + 1 < routeLine.length) {
+				var end = routeLine[i + 1];
+				var low = 0.;
+				var high = 1.;
+				for (_ in 0...6) {
+					var t = (low + high) / 2;
+					var probe = new Point(candidate.x + (end.x - candidate.x) * t, candidate.y + (end.y - candidate.y) * t);
+					if (steeringClear(x, y, probe) && hazardFree(x, y, probe))
+						low = t;
+					else
+						high = t;
+				}
+				return new Point(candidate.x + (end.x - candidate.x) * low, candidate.y + (end.y - candidate.y) * low);
+			}
+			return candidate;
+		}
+		return null;
+	}
+
+	function sampleLine(x:Float, y:Float):Point {
 		if (routeLine.length < 2)
 			return null;
 		var best = Math.POSITIVE_INFINITY;
@@ -722,64 +852,72 @@ class WalkGrid {
 			var dy = b.y - a.y;
 			var length = dx * dx + dy * dy;
 			var t = length == 0 ? 0. : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / length));
-			var p = new Point(a.x + dx * t, a.y + dy * t);
-			var distance = Point.distance(new Point(x, y), p);
+			var px = a.x + dx * t;
+			var py = a.y + dy * t;
+			var ex = px - x;
+			var ey = py - y;
+			var distance = ex * ex + ey * ey;
 			if (distance < best) {
 				best = distance;
 				segment = i;
-				projection = p;
+				if (projection == null)
+					projection = new Point();
+				projection.x = px;
+				projection.y = py;
 			}
 		}
-		if (segment < 0 || best > 95)
+		lastLineDistanceSquared = best;
+		if (segment < 0 || best > 95 * 95)
 			return null;
-		var remaining = 192.;
-		var headingRemaining = COMPASS_LOOKAHEAD;
-		var headingFound = false;
-		var headingPoint = projection;
-		var from = projection;
-		var target = routeLine[segment + 1];
-		for (i in segment + 1...routeLine.length) {
-			var p = routeLine[i];
-			var distance = Point.distance(from, p);
-			if (!headingFound && distance > 0.001) {
-				var portion = Math.min(distance, headingRemaining) / distance;
-				headingPoint = new Point(from.x + (p.x - from.x) * portion, from.y + (p.y - from.y) * portion);
-				if (distance >= headingRemaining)
-					headingFound = true;
-				else
-					headingRemaining -= distance;
-			}
-			if (distance >= remaining) {
-				target = new Point(from.x + (p.x - from.x) * remaining / distance, from.y + (p.y - from.y) * remaining / distance);
+		var ignoredGate = segment == routeLine.length - 2 ? routeGateId : 0;
+		var target:Point = furthestVisible(segment, projection, x, y);
+		var headingPoint:Point = target;
+		// Shorten the forward arc at a corner, rather than aiming back at
+		// its already-passed vertex when a longer chord crosses a wall.
+		for (ahead in (target == null ? STEERING_ARCS : [])) {
+			var candidate = forwardRoutePoint(segment, projection, ahead);
+			var dx = candidate.x - x;
+			var dy = candidate.y - y;
+			if (dx * dx + dy * dy < .25 || !steeringClear(x, y, candidate, ignoredGate))
+				continue;
+			if (target == null)
+				target = candidate;
+			if (ahead <= COMPASS_LOOKAHEAD) {
+				headingPoint = candidate;
 				break;
 			}
-			target = p;
-			remaining -= distance;
-			from = p;
 		}
-		var ignoredGate = segment == routeLine.length - 2 ? routeGateId : 0;
-		if (!clearGridLine(x, y, target))
-			target = routeLine[segment + 1];
-		if (!clearGridLine(x, y, target) && segment != routeLine.length - 2)
-			return null;
-		// Publish a chord across the short forward arc only after the route
-		// passes validation. Rejected candidates must not change the heading
-		// belonging to the still-active route.
-		var hx = headingPoint.x - projection.x;
-		var hy = headingPoint.y - projection.y;
+		if (target == null) {
+			var corner = routeLine[segment + 1];
+			var dx = corner.x - x;
+			var dy = corner.y - y;
+			if (dx * dx + dy * dy > .000001 && steeringClear(x, y, corner, ignoredGate)) {
+				target = corner;
+				headingPoint = corner;
+			} else
+				return null;
+		}
+		if (headingPoint == null)
+			headingPoint = target;
+		var hx = headingPoint.x - x;
+		var hy = headingPoint.y - y;
 		var span = Math.sqrt(hx * hx + hy * hy);
-		if (span > 0.5) {
-			var nextDirection = new Point(hx / span * 100, hy / span * 100);
-			if (routeDirection.x * nextDirection.x + routeDirection.y * nextDirection.y < -5000)
+		steeringDistance = span;
+		if (span > .001) {
+			var scale = 100 / span;
+			var nextX = hx * scale;
+			var nextY = hy * scale;
+			if (routeDirection.x * nextX + routeDirection.y * nextY < -5000)
 				stats.event("sharp-heading-turn", {
 					x: x,
 					y: y,
 					fromX: routeDirection.x,
 					fromY: routeDirection.y,
-					toX: nextDirection.x,
-					toY: nextDirection.y
+					toX: nextX,
+					toY: nextY
 				});
-			routeDirection = nextDirection;
+			routeDirection.x = nextX;
+			routeDirection.y = nextY;
 		}
 		return target;
 	}

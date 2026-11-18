@@ -30,6 +30,151 @@ class Compass extends starling.display.Sprite {
 	var owner:ActorView;
 	var routeVisual = new starling.display.Sprite();
 	var routeBatches:Array<RouteBatch> = [];
+	var motionTarget:Array<openfl.geom.Point>;
+	var motionEnd:Array<openfl.geom.Point>;
+	var motionFrames:Array<Array<openfl.geom.Point>> = [];
+	var motionMask:Array<Bool>;
+	var motionFrame = 0;
+	var nextMotionFrame = 0;
+
+	function cancelMotion():Void {
+		motionTarget = null;
+		motionEnd = null;
+		motionFrames = [];
+		motionMask = null;
+	}
+
+	function drawMotionFrame(now:Int):Void {
+		if (motionTarget == null || now < nextMotionFrame || !routeVisual.visible)
+			return;
+		var finished = motionFrame >= motionFrames.length;
+		var points = finished ? motionEnd : motionFrames[motionFrame++];
+		var replacement = buildRouteBatches(points, motionMask);
+		for (batch in replacement)
+			routeVisual.addChild(batch.mesh);
+		for (batch in routeBatches)
+			batch.destroy();
+		routeBatches = replacement;
+		displayRoute = points;
+		nextMotionFrame = now + 24;
+		if (finished) {
+			shownRoute = motionTarget;
+			cancelMotion();
+			lastVisibilityX = Math.POSITIVE_INFINITY;
+		}
+	}
+
+	var headBatches:Array<RouteBatch> = [];
+	var bendOrigin:openfl.geom.Point;
+	var bendTime = 0;
+	var bendMoving = false;
+
+	function smoothBendOrigin(worldX:Float, worldY:Float, now:Int):openfl.geom.Point {
+		var target = new openfl.geom.Point(worldX, worldY);
+		if (bendOrigin == null || openfl.geom.Point.distance(bendOrigin, target) > 120) {
+			bendOrigin = target;
+			bendMoving = false;
+		} else {
+			var elapsed = Math.min(50, Math.max(0, now - bendTime));
+			var alpha = 1 - Math.exp(-elapsed / 100.);
+			bendOrigin = new openfl.geom.Point(bendOrigin.x + (worldX - bendOrigin.x) * alpha, bendOrigin.y + (worldY - bendOrigin.y) * alpha);
+			bendMoving = openfl.geom.Point.distance(bendOrigin, target) > .75;
+			if (!bendMoving)
+				bendOrigin = target;
+		}
+		bendTime = now;
+		return bendOrigin;
+	}
+
+	public var routeGrid:WalkGrid;
+
+	function clearRouteHead():Void {
+		for (batch in headBatches)
+			batch.destroy();
+		headBatches = [];
+	}
+
+	function updateRouteHead(worldX:Float, worldY:Float):Bool {
+		if (routeGrid == null || fadingBatches.length > 0)
+			return false;
+		var minimum = RouteVisibility.startDistance(lineStart, lineLength);
+		var origin = smoothBendOrigin(worldX, worldY, openfl.Lib.getTimer());
+		var head = RouteHead.connect(displayRoute, origin.x, origin.y, routeGrid);
+		if (head == null && bendMoving) {
+			bendOrigin = new openfl.geom.Point(worldX, worldY);
+			bendMoving = false;
+			head = RouteHead.connect(displayRoute, worldX, worldY, routeGrid);
+		}
+		if (head == null)
+			return false;
+		// Include the first straight tail segment in the curved mesh. The
+		// remaining tail starts at the next shared cross section.
+		var headPoints = head.points.copy();
+		var tailStart = head.join;
+		var headLength = head.length;
+		if (head.join + 1 < displayRoute.length - 1) {
+			var next = displayRoute[head.join + 1];
+			headLength += openfl.geom.Point.distance(headPoints[headPoints.length - 1], next);
+			headPoints.push(next);
+			tailStart++;
+		}
+		var headMask = RouteHead.mask(headPoints, 0, 0, minimum, lineLength);
+		var tailMask = RouteHead.mask(displayRoute, tailStart, headLength, minimum, lineLength);
+		if (!RouteVisibility.drawable(tailMask))
+			return false;
+		var drawHead = RouteVisibility.drawable(headMask);
+		var joined = drawHead && headMask[headMask.length - 1] && tailMask[tailStart];
+		var replacement:Array<RouteBatch> = [];
+		if (drawHead) {
+			for (layer in (reducedEffects ? 1 : 0)...2) {
+				var color = layer == 0 ? 0x9564C7 : 0xE9D2FE;
+				var width = (layer == 0 ? 11.52 : 5.4) * lineWidth;
+				var opacity = layer == 0 ? 0.4032 : 0.95;
+				var batch = RouteRibbon.batch(headPoints, color, width, opacity, !reducedEffects);
+				batch.show(headMask, false, joined);
+				replacement.push(batch);
+			}
+		}
+		for (batch in routeBatches)
+			batch.show(tailMask, joined);
+		for (batch in replacement)
+			routeVisual.addChild(batch.mesh);
+		clearRouteHead();
+		headBatches = replacement;
+		blankMask = false;
+		return true;
+	}
+
+	var fadingBatches:Array<RouteBatch> = [];
+	var fadingAlpha:Array<Float> = [];
+	var arrivingAlpha:Array<Float> = [];
+	var fadeStarted = 0;
+
+	function finishRouteFade():Void {
+		for (batch in fadingBatches)
+			batch.destroy();
+		fadingBatches = [];
+		fadingAlpha = [];
+		for (i in 0...arrivingAlpha.length)
+			if (i < routeBatches.length)
+				routeBatches[i].mesh.alpha = arrivingAlpha[i];
+		arrivingAlpha = [];
+	}
+
+	function updateRouteFade(now:Int):Void {
+		if (fadingBatches.length == 0)
+			return;
+		var progress = Math.max(0., Math.min(1., (now - fadeStarted) / 50.));
+		for (i in 0...fadingBatches.length)
+			fadingBatches[i].mesh.alpha = fadingAlpha[i] * (1 - progress);
+		for (i in 0...routeBatches.length)
+			routeBatches[i].mesh.alpha = arrivingAlpha[i] * progress;
+		if (progress >= 1) {
+			finishRouteFade();
+			lastVisibilityX = Math.POSITIVE_INFINITY;
+		}
+	}
+
 	var lastVisibilityX = Math.POSITIVE_INFINITY;
 	var lastVisibilityY = Math.POSITIVE_INFINITY;
 	var shownRoute:Array<openfl.geom.Point>;
@@ -218,6 +363,9 @@ class Compass extends starling.display.Sprite {
 	function syncCamera(event:Event):Void {
 		if (!visible)
 			return;
+		var now = openfl.Lib.getTimer();
+		updateRouteFade(now);
+		drawMotionFrame(now);
 		if (backdrop != null)
 			mount.transformationMatrix = backdrop.transformationMatrix;
 		if (owner != null && owner.root != null) {
@@ -237,18 +385,25 @@ class Compass extends starling.display.Sprite {
 		y = worldY;
 		routeVisual.x = -worldX;
 		routeVisual.y = -worldY;
-		if (shownRoute != null && Math.abs(worldX - windowX) + Math.abs(worldY - windowY) > 600)
+		if (motionTarget != null)
+			return;
+		if (routeVisual.visible && shownRoute != null && Math.abs(worldX - windowX) + Math.abs(worldY - windowY) > 600)
 			setRoute(shownRoute, true);
 		var now = openfl.Lib.getTimer();
+		if (bendMoving && now - lastVisibilityTime < 24)
+			return;
 		var moved = Math.abs(worldX - lastVisibilityX) + Math.abs(worldY - lastVisibilityY);
 		if (reducedEffects && moved < 96 && lastVisibilityX != Math.POSITIVE_INFINITY && now - lastVisibilityTime < 66)
 			return;
-		if (Math.abs(worldX - lastVisibilityX) + Math.abs(worldY - lastVisibilityY) < 16)
+		if (!bendMoving && Math.abs(worldX - lastVisibilityX) + Math.abs(worldY - lastVisibilityY) < (reducedEffects ? 16 : 8))
 			return;
 		lastVisibilityX = worldX;
 		lastVisibilityY = worldY;
 		lastVisibilityTime = now;
 		if (routeVisual.visible && displayRoute.length > 1 && routeBatches.length > 0) {
+			if (updateRouteHead(worldX, worldY))
+				return;
+			clearRouteHead();
 			var mask = RouteVisibility.mask(displayRoute, worldX, worldY, RouteVisibility.startDistance(lineStart, lineLength), lineLength);
 			var blank = !RouteVisibility.drawable(mask);
 			if (stats != null && blank && !blankMask) {
@@ -283,6 +438,11 @@ class Compass extends starling.display.Sprite {
 	}
 
 	function releaseRoute():Void {
+		bendOrigin = null;
+		bendMoving = false;
+		cancelMotion();
+		clearRouteHead();
+		finishRouteFade();
 		for (batch in routeBatches)
 			batch.destroy();
 		routeBatches = [];
@@ -452,9 +612,22 @@ class Compass extends starling.display.Sprite {
 		if (groundNeedle == null || !visible || !hasHeading || groundBoss.visible)
 			return;
 		var delta = (heading - groundNeedle.rotation + Math.PI * 3) % (Math.PI * 2) - Math.PI;
-		groundNeedle.rotation += smooth ? delta * (1 - Math.exp(-elapsed / 75.)) : delta;
+		groundNeedle.rotation += smooth ? delta * (1 - Math.exp(-elapsed / (Math.abs(delta) > Math.PI * .65 ? 18. : 28.))) : delta;
 		positionArrow();
 		groundGuide.visible = false;
+	}
+
+	function buildRouteBatches(nextDisplay:Array<openfl.geom.Point>, mask:Array<Bool>):Array<RouteBatch> {
+		var nextBatches:Array<RouteBatch> = [];
+		for (layer in (reducedEffects ? 1 : 0)...2) {
+			var color = layer == 0 ? 0x9564C7 : 0xE9D2FE;
+			var width = (layer == 0 ? 11.52 : 5.4) * lineWidth;
+			var opacity = layer == 0 ? 0.4032 : 0.95;
+			var batch = RouteRibbon.batch(nextDisplay, color, width, opacity, !reducedEffects);
+			batch.show(mask);
+			nextBatches.push(batch);
+		}
+		return nextBatches;
 	}
 
 	public function setRoute(points:Array<openfl.geom.Point>, refreshWindow:Bool = false):Void {
@@ -463,7 +636,7 @@ class Compass extends starling.display.Sprite {
 			return;
 		if (points == null || points.length < 2)
 			return;
-		if (shownRoute == points && !refreshWindow)
+		if (!refreshWindow && (motionTarget == points || (motionTarget == null && shownRoute == points)))
 			return;
 		if (rejectedRoute == points && Math.abs(x - rejectedX) + Math.abs(y - rejectedY) < 32)
 			return;
@@ -495,17 +668,33 @@ class Compass extends starling.display.Sprite {
 			return;
 		}
 		rejectedRoute = null;
-		var nextBatches:Array<RouteBatch> = [];
-		for (layer in (reducedEffects ? 1 : 0)...2) {
-			var color = layer == 0 ? 0x9564C7 : 0xE9D2FE;
-			var width = (layer == 0 ? 11.52 : 5.4) * lineWidth;
-			var opacity = layer == 0 ? 0.4032 : 0.95;
-			var batch = RouteRibbon.batch(nextDisplay, color, width, opacity, !reducedEffects);
-			batch.show(mask);
-			nextBatches.push(batch);
+		var live = routeGrid != null;
+		if (live && !refreshWindow && !reducedEffects && displayRoute.length > 1) {
+			var matched = RouteMotion.match(displayRoute, nextDisplay, mask);
+			if (matched != null) {
+				var first = RouteMotion.frame(matched, nextDisplay, mask, 1. / 3., routeGrid, true);
+				var second = first == null ? null : RouteMotion.frame(matched, nextDisplay, mask, 2. / 3., routeGrid);
+				if (second != null) {
+					motionTarget = points;
+					motionEnd = nextDisplay;
+					motionFrames = [first, second];
+					motionMask = mask;
+					motionFrame = 0;
+					nextMotionFrame = openfl.Lib.getTimer();
+					windowX = x;
+					windowY = y;
+					clearRouteHead();
+					return;
+				}
+			}
 		}
+		cancelMotion();
+		var nextBatches = buildRouteBatches(nextDisplay, mask);
 		for (batch in nextBatches)
 			routeVisual.addChild(batch.mesh);
+		finishRouteFade();
+		var hadHead = headBatches.length > 0;
+		clearRouteHead();
 		var previous = routeBatches;
 		routeBatches = nextBatches;
 		displayRoute = nextDisplay;
@@ -528,8 +717,17 @@ class Compass extends starling.display.Sprite {
 		lastVisibilityX = x;
 		lastVisibilityY = y;
 		lastVisibilityTime = openfl.Lib.getTimer();
-		for (batch in previous)
-			batch.destroy();
+		if (!live && !refreshWindow && !reducedEffects && !hadHead && previous.length > 0) {
+			fadingBatches = previous;
+			fadingAlpha = [for (batch in previous) batch.mesh.alpha];
+			arrivingAlpha = [for (batch in routeBatches) batch.mesh.alpha];
+			fadeStarted = openfl.Lib.getTimer();
+			for (batch in routeBatches)
+				batch.mesh.alpha = 0;
+		} else {
+			for (batch in previous)
+				batch.destroy();
+		}
 		if (stats != null) {
 			var elapsed = (haxe.Timer.stamp() - meshStarted) * 1000;
 			stats.meshMs += elapsed;
@@ -538,6 +736,7 @@ class Compass extends starling.display.Sprite {
 	}
 
 	public function hideRoute():Void {
+		cancelMotion();
 		if (stats != null && routeVisual.visible)
 			stats.event("route-hidden", {x: x, y: y, shownPoints: shownRoute == null ? 0 : shownRoute.length});
 		routeVisual.visible = false;
