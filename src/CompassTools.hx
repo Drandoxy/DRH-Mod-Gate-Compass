@@ -12,15 +12,10 @@ class CompassTools extends Sprite {
 	static inline final PADDING = 24.;
 	static inline final TRACK_WIDTH = PANEL_WIDTH - PADDING * 2;
 	static inline final SLIDER_WIDTH = TRACK_WIDTH - 16;
-	static inline final TOGGLE_WIDTH = 72.;
-	static inline final TOGGLE_HEIGHT = 26.;
 	static inline final BUTTON_WIDTH = (TRACK_WIDTH - 16) / 2;
 	static inline final BUTTON_HEIGHT = 38.;
 
 	var skin:CompassSkin;
-	var switches:Array<Sprite> = [];
-	var switchLabels:Array<TextField> = [];
-	var flags:Array<CompassOption<Bool>> = [];
 	var popupHeight = 365.;
 	var ctx:Context;
 
@@ -40,15 +35,13 @@ class CompassTools extends Sprite {
 	var origin = new Point();
 	var initialScale = 1.;
 
-	public function new(ctx:Context, controls:Array<CompassControl>, ?flags:Array<CompassOption<Bool>>, ?commit:Void->Void) {
+	public function new(ctx:Context, controls:Array<CompassControl>, ?commit:Void->Void) {
 		super();
 		this.ctx = ctx;
 		skin = new CompassSkin(ctx);
 		this.commit = commit;
 		this.controls = controls;
-		if (flags != null)
-			this.flags = flags;
-		var settingsEnd = 70 + this.flags.length * 30 + controls.length * 46;
+		var settingsEnd = 70 + controls.length * 46;
 		popupHeight = settingsEnd + 82;
 		grip(popupGrip, popup, PANEL_WIDTH - 16, popupHeight - 16);
 		skin.board(popup, PANEL_WIDTH, popupHeight);
@@ -56,7 +49,7 @@ class CompassTools extends Sprite {
 		header.graphics.beginFill(0, 0);
 		header.graphics.drawRect(0, 0, PANEL_WIDTH - 70, 48);
 		header.graphics.endFill();
-		skin.banner(header, "Compass settings", PANEL_WIDTH);
+		skin.banner(header, "Adjust appearance", PANEL_WIDTH);
 		header.buttonMode = true;
 		header.addEventListener(MouseEvent.MOUSE_DOWN, drag);
 		popup.addChild(header);
@@ -74,48 +67,15 @@ class CompassTools extends Sprite {
 		reset.buttonMode = true;
 		reset.addEventListener(MouseEvent.CLICK, resetDefaults);
 		popup.addChild(reset);
-		var names = [
-			"Enable 2D Compass",
-			"Enable 3D Compass",
-			"Enable Pathfinder line",
-			"Smooth Compass",
-			"Low power mode"
-		];
-		for (i in 0...this.flags.length) {
-			var row = new Sprite();
-			var name = label(names[i], 14);
-			name.mouseEnabled = false;
-			name.width = TRACK_WIDTH - TOGGLE_WIDTH - 16;
-			row.addChild(name);
-			var toggle = new Sprite();
-			toggle.x = TRACK_WIDTH - TOGGLE_WIDTH;
-			skin.button(toggle, TOGGLE_WIDTH, TOGGLE_HEIGHT);
-			var toggleLabel = buttonCaption(toggle, "", TOGGLE_WIDTH, TOGGLE_HEIGHT, 12);
-			switchLabels.push(toggleLabel);
-			toggle.y = 0;
-			row.addChild(toggle);
-			switches.push(toggle);
-			row.x = PADDING;
-			row.y = 70 + i * 30;
-			row.buttonMode = true;
-			row.addEventListener(MouseEvent.CLICK, function(e) {
-				e.stopPropagation();
-				this.flags[i].value = !this.flags[i].value;
-				if (commit != null)
-					commit();
-				refresh();
-			});
-			popup.addChild(row);
-		}
 		for (i in 0...controls.length) {
 			var text = label("", 14);
 			text.x = PADDING;
-			text.y = 70 + this.flags.length * 30 + i * 46;
+			text.y = 70 + i * 46;
 			labels.push(text);
 			popup.addChild(text);
 			var track = new Sprite();
 			track.x = PADDING + 8;
-			track.y = 102 + this.flags.length * 30 + i * 46;
+			track.y = 102 + i * 46;
 			track.buttonMode = true;
 			tracks.push(track);
 			popup.addChild(track);
@@ -179,7 +139,7 @@ class CompassTools extends Sprite {
 		x = 0;
 		y = 0;
 		popup.scaleX = popup.scaleY = Math.min(1, Math.max(.5, (ctx.viewHeight - 24) / popupHeight));
-		popup.x = Math.max(0, (ctx.viewWidth - PANEL_WIDTH) / 2);
+		popup.x = Math.max(8, ctx.viewWidth - PANEL_WIDTH * popup.scaleX - 24);
 		popup.y = Math.max(0, (ctx.viewHeight - popupHeight) / 2);
 		clampPopup();
 	}
@@ -188,9 +148,6 @@ class CompassTools extends Sprite {
 		e.stopPropagation();
 		for (c in controls)
 			c.option.value = c.defaultValue;
-		for (i in 0...flags.length)
-			flags[i].value = i > 0 && i < 4;
-		defaultLayout();
 		refresh();
 		save();
 	}
@@ -299,10 +256,6 @@ class CompassTools extends Sprite {
 	}
 
 	function refresh():Void {
-		for (i in 0...switches.length) {
-			switchLabels[i].text = flags[i].value ? "ON" : "OFF";
-			switchLabels[i].y = (TOGGLE_HEIGHT - switchLabels[i].textHeight) / 2 - 2;
-		}
 		for (i in 0...controls.length) {
 			var c = controls[i];
 			labels[i].text = c.label + ": " + Math.round(c.option.value * 100) / 100;

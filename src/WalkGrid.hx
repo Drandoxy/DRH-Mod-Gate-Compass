@@ -24,8 +24,6 @@ class WalkGrid {
 	public static inline final COMPASS_LOOKAHEAD = 96.;
 	static final STEERING_ARCS = [192., COMPASS_LOOKAHEAD, 48., 24., 12., 6., 3., 1.];
 
-	public var stats = new NavigationStats();
-
 	var geometryBuild:GeometryBuild;
 	var publishedGeometry:GeometryBuild;
 	var queuedTiles:Array<Tile>;
@@ -83,6 +81,17 @@ class WalkGrid {
 		});
 	}
 
+	public function forgetGoal():Void {
+		desiredGoal = null;
+		desiredGate = null;
+		desiredGateId = 0;
+		field = null;
+		resetLiveRoute();
+		routeLine = [];
+		visualRoute = [];
+		invalidateRoute();
+	}
+
 	public function geometryPending():Bool {
 		return geometryBuild != null;
 	}
@@ -91,11 +100,7 @@ class WalkGrid {
 		if (geometryBuild == null)
 			return false;
 		var job = geometryBuild;
-		var started = haxe.Timer.stamp();
 		job.runSlice(ms, maxSteps);
-		var elapsed = (haxe.Timer.stamp() - started) * 1000;
-		stats.geometryMs += elapsed;
-		stats.maximumGeometryMs = Math.max(stats.maximumGeometryMs, elapsed);
 		if (!job.done)
 			return false;
 		geometryBuild = null;
@@ -124,7 +129,6 @@ class WalkGrid {
 			focusCell = cellAt(heroX, heroY);
 			if (desiredGoal != null)
 				prepareField(desiredGoal, desiredGate, desiredGateId);
-			stats.event("geometry-published", {cells: cells.length, steps: job.steps});
 		}
 		if (queuedTiles != null) {
 			var tiles = queuedTiles;
@@ -134,29 +138,6 @@ class WalkGrid {
 			});
 		}
 		return job.changed;
-	}
-
-	function corridorClear(x:Float, y:Float, target:Point, ignoredGate:UInt = 0):Bool {
-		if (cachedQueries)
-			return clearGridLine(x, y, target);
-		if (!canAim(x, y, target, ignoredGate) || !clearGridLine(x, y, target))
-			return false;
-		var dx = target.x - x;
-		var dy = target.y - y;
-		var length = Math.sqrt(dx * dx + dy * dy);
-		if (length < 0.001)
-			return true;
-		var radius = 16.;
-		var nx = -dy / length * radius;
-		var ny = dx / length * radius;
-		for (side in [-1, 1]) {
-			var end = new Point(target.x + nx * side, target.y + ny * side);
-			// The center grid already includes the agent radius. Side rays
-			// check actual shapes without inflating that radius a second time.
-			if (!canAim(x + nx * side, y + ny * side, end, ignoredGate))
-				return false;
-		}
-		return true;
 	}
 
 	public function clear():Void {
@@ -308,8 +289,6 @@ class WalkGrid {
 		resetLiveRoute();
 		focusAnnounced = false;
 		field = new RouteField(goal, gate, gateId, key, cells.length);
-		if (stats.initialSearchStarted < 0)
-			stats.initialSearchStarted = haxe.Timer.stamp();
 		routeGoal = key;
 		routeGateId = gateId;
 	}
@@ -327,8 +306,8 @@ class WalkGrid {
 	}
 
 	public function advanceField():Bool {
-		var totalBudget = lowPower ? 0.6 : 1.5;
 		var started = haxe.Timer.stamp();
+		var totalBudget = lowPower ? 0.6 : 1.5;
 		var changed = advanceGeometry(cells.length == 0 ? totalBudget : totalBudget * .4);
 		var remaining = totalBudget - (haxe.Timer.stamp() - started) * 1000;
 		if (field == null || remaining <= .02)
@@ -344,7 +323,6 @@ class WalkGrid {
 		field.fullSeeds = true;
 		resetLiveRoute();
 		focusAnnounced = false;
-		stats.event("full-gate-seed-retry", {});
 		return true;
 	}
 
@@ -662,34 +640,6 @@ class WalkGrid {
 		return compactLine(raw);
 	}
 
-	function visualRemaining(line:Array<Point>):Float {
-		if (line == null || line.length < 2 || focusCell < 0 || focusCell >= cells.length)
-			return -1;
-		var origin = point(focusCell);
-		var best = Math.POSITIVE_INFINITY;
-		var remaining = 0.;
-		var tail = 0.;
-		for (offset in 0...line.length - 1) {
-			var i = line.length - 2 - offset;
-			var a = line[i];
-			var b = line[i + 1];
-			var dx = b.x - a.x;
-			var dy = b.y - a.y;
-			var square = dx * dx + dy * dy;
-			var length = Math.sqrt(square);
-			var t = square == 0 ? 0. : Math.max(0, Math.min(1, ((origin.x - a.x) * dx + (origin.y - a.y) * dy) / square));
-			var ex = a.x + dx * t - origin.x;
-			var ey = a.y + dy * t - origin.y;
-			var distance = ex * ex + ey * ey;
-			if (distance < best) {
-				best = distance;
-				remaining = tail + (1 - t) * length;
-			}
-			tail += length;
-		}
-		return best <= 95 * 95 ? remaining : -1;
-	}
-
 	// Only merge collinear validated grid edges. This inexpensive first pass
 	// never shortcuts across a wall or invents a diagonal through an obstacle.
 	static function compactLine(raw:Array<Point>):Array<Point> {
@@ -907,15 +857,6 @@ class WalkGrid {
 			var scale = 100 / span;
 			var nextX = hx * scale;
 			var nextY = hy * scale;
-			if (routeDirection.x * nextX + routeDirection.y * nextY < -5000)
-				stats.event("sharp-heading-turn", {
-					x: x,
-					y: y,
-					fromX: routeDirection.x,
-					fromY: routeDirection.y,
-					toX: nextX,
-					toY: nextY
-				});
 			routeDirection.x = nextX;
 			routeDirection.y = nextY;
 		}
@@ -952,10 +893,6 @@ class WalkGrid {
 		}
 		heap[i] = last;
 		return result;
-	}
-
-	static function tileKey(x:Int, y:Int):String {
-		return x + ":" + y;
 	}
 
 	public function isGentleDirection(x:Float, y:Float, target:Point):Bool {

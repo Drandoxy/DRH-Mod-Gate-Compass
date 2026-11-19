@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory(prefix="compass-checks-") as directory:
     runtime = Path(directory)
     shutil.copytree(root / "tests" / "fixtures", runtime, dirs_exist_ok=True)
     shutil.copytree(root / "src", runtime / "mods" / "gate_compass")
-    for name in ("ClockChecks", "CompassChecks", "GeometryChecks", "PaletteChecks", "HeadingChecks", "ProbeChecks", "PanelChecks", "SkinChecks", "HoverChecks", "VisibilityChecks", "PauseChecks"):
+    for name in ("GoalChecks", "ClockChecks", "CompassChecks", "GeometryChecks", "PaletteChecks", "HeadingChecks", "ProbeChecks", "PanelChecks", "SkinChecks", "HoverChecks", "VisibilityChecks", "PauseChecks"):
         subprocess.run([args.haxe, "-cp", str(runtime), "-main", name, "--interp"], check=True)
 
     shutil.copytree(root / "tests" / "entry_host", runtime, dirs_exist_ok=True)

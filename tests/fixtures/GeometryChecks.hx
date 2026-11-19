@@ -23,8 +23,21 @@ class GeometryChecks{
   g.advanceGeometry(100,1);check(g.geometryBuild.steps==1&&g.cells.length==0,"geometry step ceiling ignored");drain(g);
   check(g.cells.length==oracle.cells.length,"grid dimensions changed");
   for(i in 0...g.cells.length){check(g.cells[i]==oracle.cells[i],"occupancy "+i);check(g.hazards[i]==oracle.hazards[i],"hazard "+i);check(g.nearCollider[i]==oracle.nearCollider[i],"near collider "+i);check(g.clearance[i]==oracle.clearance[i],"clearance "+i);}
-  var held=g.cells;g.refresh(floor,tiles);g.refresh(floor,tiles);drain(g);check(g.cells==held,"unchanged grid discarded");
+  var initialRaster=g.publishedGeometry.rasterSteps;var held=g.cells;g.refresh(floor,tiles);g.refresh(floor,tiles);drain(g);check(g.cells==held,"unchanged grid discarded");
   circle.radius=.4;g.refresh(floor,tiles);g.advanceGeometry(100,2);check(g.cells==held,"changed partial grid published");drain(g);check(g.cells!=held,"changed geometry ignored");
+  oracle.refresh(floor,tiles);
+  for(i in 0...g.cells.length){check(g.cells[i]==oracle.cells[i],"updated occupancy "+i);check(g.hazards[i]==oracle.hazards[i],"updated hazards "+i);check(g.clearance[i]==oracle.clearance[i],"updated clearance "+i);}
+  var extra=new Tile("secret",100,0);tiles.push(extra);g.refresh(floor,tiles);drain(g);oracle.refresh(floor,tiles);
+  check(g.cells.length==oracle.cells.length,"secret room dimensions");
+  for(i in 0...g.cells.length){check(g.cells[i]==oracle.cells[i],"secret occupancy "+i);check(g.hazards[i]==oracle.hazards[i],"secret hazards "+i);check(g.clearance[i]==oracle.clearance[i],"secret clearance "+i);}
+  check(g.publishedGeometry.rasterSteps<initialRaster,"unchanged distant colliders rasterized for secret room");
+  tiles.pop();g.refresh(floor,tiles);drain(g);oracle.refresh(floor,tiles);
+  for(i in 0...g.cells.length)check(g.cells[i]==oracle.cells[i],"removed room occupancy "+i);
+  tiles.push(new Tile("expanded-secret",-100,0));g.refresh(floor,tiles);drain(g);oracle.refresh(floor,tiles);
+  check(g.cells.length==oracle.cells.length,"expanded secret dimensions");
+  for(i in 0...g.cells.length){check(g.cells[i]==oracle.cells[i],"expanded occupancy "+i);check(g.hazards[i]==oracle.hazards[i],"expanded hazards "+i);check(g.clearance[i]==oracle.clearance[i],"expanded clearance "+i);}
+  a.next=c;g.refresh(floor,tiles);drain(g);oracle.refresh(floor,tiles);
+  for(i in 0...g.cells.length){check(g.cells[i]==oracle.cells[i],"removed obstacle occupancy "+i);check(g.hazards[i]==oracle.hazards[i],"removed obstacle hazards "+i);check(g.clearance[i]==oracle.clearance[i],"removed obstacle clearance "+i);}
   g.refresh(floor,tiles);g.clear();check(!g.geometryPending()&&g.floor==null,"clear retained pending native references");
   trace("PASS: original occupancy/hazards/clearance, sparse flood, bounded steps, atomic publication, unchanged reuse, queued refresh and cancellation");
  }

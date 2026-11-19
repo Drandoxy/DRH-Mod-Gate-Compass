@@ -19,8 +19,6 @@ import openfl.text.TextFormat;
 class Compass extends starling.display.Sprite {
 	var ctx:Context;
 
-	public var stats:NavigationStats;
-
 	var windowX = Math.POSITIVE_INFINITY;
 	var windowY = Math.POSITIVE_INFINITY;
 	var blankMask = false;
@@ -406,10 +404,6 @@ class Compass extends starling.display.Sprite {
 			clearRouteHead();
 			var mask = RouteVisibility.mask(displayRoute, worldX, worldY, RouteVisibility.startDistance(lineStart, lineLength), lineLength);
 			var blank = !RouteVisibility.drawable(mask);
-			if (stats != null && blank && !blankMask) {
-				stats.zeroMasks++;
-				stats.event("empty-mask", {x: worldX, y: worldY, points: displayRoute.length});
-			}
 			blankMask = blank;
 			for (batch in routeBatches)
 				batch.show(mask);
@@ -640,7 +634,6 @@ class Compass extends starling.display.Sprite {
 			return;
 		if (rejectedRoute == points && Math.abs(x - rejectedX) + Math.abs(y - rejectedY) < 32)
 			return;
-		var meshStarted = haxe.Timer.stamp();
 		// Prepare a complete replacement without touching the displayed meshes.
 		var window = RouteWindow.cut(points, x, y, lineLength + 1000);
 		var nextDisplay:Array<openfl.geom.Point> = [];
@@ -658,10 +651,6 @@ class Compass extends starling.display.Sprite {
 		var mask = RouteVisibility.mask(nextDisplay, x, y, RouteVisibility.startDistance(lineStart, lineLength), lineLength);
 		// A new prefix entirely inside the head fade must not erase a good line.
 		if (!RouteVisibility.drawable(mask)) {
-			if (stats != null) {
-				stats.rejectedSwaps++;
-				stats.event("blank-replacement", {x: x, y: y, points: points.length});
-			}
 			rejectedRoute = points;
 			rejectedX = x;
 			rejectedY = y;
@@ -702,18 +691,6 @@ class Compass extends starling.display.Sprite {
 		windowX = x;
 		windowY = y;
 		blankMask = false;
-		if (stats != null) {
-			if (stats.swaps == 0 && stats.initialSearchStarted >= 0)
-				stats.firstMeshDelayMs = (haxe.Timer.stamp() - stats.initialSearchStarted) * 1000;
-			stats.swaps++;
-			stats.event("route-swap", {
-				x: x,
-				y: y,
-				sourcePoints: points.length,
-				meshPoints: nextDisplay.length,
-				windowRefresh: refreshWindow
-			});
-		}
 		lastVisibilityX = x;
 		lastVisibilityY = y;
 		lastVisibilityTime = openfl.Lib.getTimer();
@@ -728,17 +705,10 @@ class Compass extends starling.display.Sprite {
 			for (batch in previous)
 				batch.destroy();
 		}
-		if (stats != null) {
-			var elapsed = (haxe.Timer.stamp() - meshStarted) * 1000;
-			stats.meshMs += elapsed;
-			stats.maximumMeshMs = Math.max(stats.maximumMeshMs, elapsed);
-		}
 	}
 
 	public function hideRoute():Void {
 		cancelMotion();
-		if (stats != null && routeVisual.visible)
-			stats.event("route-hidden", {x: x, y: y, shownPoints: shownRoute == null ? 0 : shownRoute.length});
 		routeVisual.visible = false;
 	}
 

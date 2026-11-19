@@ -13,15 +13,15 @@ Enable each independently. Both compasses aim toward a far visible point along t
 
 ## Settings
 
-Open **MODS > Gate Compass > Settings**, or press **Ctrl + Shift + G**.
+Use the five switches in **MODS** for 2D, 3D, Pathfinder, smoothing and low power. For the seven appearance sliders, open **MODS > Gate Compass > Adjust appearance**, or press **Ctrl + Shift + G**.
 
 - Adjust circle/arrow sizes, stroke widths and arrow distance.
 - **Line length**: 300–2,200 world units; default 2,200.
 - **Line start distance**: 0–500 world units from your hero; default 135. It is capped below line length so a section remains visible. This does not change the compass steering target.
 - **Smooth Compass** gives smooth turns; turn it off for immediate direction changes.
-- **Reset** restores defaults. Settings, positions and sizes save automatically.
+- **Reset** restores appearance defaults without moving the panel. Settings, positions and sizes save automatically.
 
-Move the settings panel by its title bar; its bottom-right corner resizes it. **Ctrl + Shift + Q** toggles navigation and releases its caches when off.
+The appearance panel defaults to the side. Move the appearance panel by its title bar; its bottom-right corner resizes it. **Ctrl + Shift + Q** toggles navigation and releases its caches when off.
 
 ## Low power mode
 

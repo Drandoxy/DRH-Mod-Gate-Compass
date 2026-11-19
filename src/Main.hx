@@ -11,7 +11,6 @@ import mods.api.dungeon.Hero;
 import mods.api.dungeon.Tile;
 import openfl.Lib;
 import openfl.ui.Keyboard;
-import mods.api._internal.Hub;
 import openfl.events.Event;
 import distributedObjects.HeroGameObject;
 import openfl.geom.Point;
@@ -24,14 +23,11 @@ class Main extends Mod {
 	var preferences:CompassPreferences;
 	var palette:CompassPalette;
 	var themeColor = 0x00DFFF;
-	var setting:Subscription;
 	var toggleSetting:Subscription;
 	var listening = false;
-	var modeSetting:Subscription;
 	var visualMode = "ground_line";
 	var displayFlags:Array<CompassOption<Bool>> = [];
 	var floating:FloatingCompass;
-	var sizeSetting:Subscription;
 	var compassSize = 1.;
 	var tools:CompassTools;
 	var controls:Array<CompassControl> = [];
@@ -62,9 +58,6 @@ class Main extends Mod {
 	var lastSearchRoom:Tile;
 	var lastSearchX = 0.;
 	var lastSearchY = 0.;
-	var checkedWaypoint:Point;
-	var checkedX = 0.;
-	var checkedY = 0.;
 
 	override public function init(context:Context):Void {
 		ctx = context;
@@ -84,8 +77,32 @@ class Main extends Mod {
 			lowPower,
 			lowPower
 		];
-		appearanceSubscriptions.push(context.settings.button("openCompassSettings", "Compass settings", "Settings").onPress(openTools));
-		appearanceSubscriptions.push(context.keys.action("openCompassPanel", "Open compass settings", "Open the live compass settings panel.", Keyboard.G,
+		var keys = ["show2D", "show3D", "showPathfinder", "smoothCompass", "lowPower"];
+		var titles = [
+			"Enable 2D Compass",
+			"Enable 3D Compass",
+			"Enable Pathfinder line",
+			"Smooth Compass",
+			"Low power mode"
+		];
+		for (i in 0...keys.length) {
+			var local = displayFlags[i == 4 ? 5 : i];
+			var native = context.settings.flag(keys[i], titles[i], "", local.value);
+			// Migrate the previous panel value once; the API owns future switch saves.
+			var migration = preferences.flag("nativeSwitchesV1", false);
+			if (!migration.value)
+				native.value = local.value;
+			else
+				local.value = native.value;
+			appearanceSubscriptions.push(native.onChange(function(value) {
+				local.value = value;
+				preferences.flush();
+			}));
+		}
+		preferences.flag("nativeSwitchesV1", false).value = true;
+		preferences.flush();
+		appearanceSubscriptions.push(context.settings.button("openCompassSettings", "Adjust appearance", "Adjust appearance").onPress(openTools));
+		appearanceSubscriptions.push(context.keys.action("openCompassPanel", "Adjust compass appearance", "Open the live appearance sliders.", Keyboard.G,
 			true, true)
 			.onPress(openTools));
 		for (index in 0...displayFlags.length) {
@@ -223,13 +240,7 @@ class Main extends Mod {
 
 	function openTools():Void {
 		if (tools == null) {
-			tools = new CompassTools(ctx, controls, [
-				displayFlags[0],
-				displayFlags[1],
-				displayFlags[2],
-				displayFlags[3],
-				displayFlags[5]
-			], applyAppearance);
+			tools = new CompassTools(ctx, controls, applyAppearance);
 			ctx.overlay.addChild(tools);
 		}
 		tools.setShown(true);
@@ -245,7 +256,6 @@ class Main extends Mod {
 		panel.setThemeColor(themeColor);
 		applyAppearance();
 		grid = new WalkGrid();
-		panel.stats = grid.stats;
 		panel.routeGrid = grid;
 		grid.lowPower = displayFlags[5].value;
 		for (h in ctx.state.heroes)
@@ -253,6 +263,13 @@ class Main extends Mod {
 		geometrySubscriptions.push(ctx.core.onObjectReady(collisionActorChanged));
 		geometrySubscriptions.push(ctx.core.onObjectGone(collisionActorChanged));
 		geometrySubscriptions.push(ctx.core.onFieldReceived(function(obj, id, name) {
+			if (floorId != 0
+				&& Std.isOfType(obj, DistributedDungeonFloor)
+				&& (cast obj : DistributedDungeonFloor).id == floorId
+					&& (StringTools.endsWith(name, ".tiles") || StringTools.endsWith(name, ".tileLibrary"))) {
+				geometryDirty = true;
+				nextGeometry = 0;
+			}
 			// Traps are persistent avoidance zones, including their inactive phase.
 			// Their trigger cycles do not change collision geometry.
 			if (StringTools.endsWith(name, ".triggerState")) {
@@ -294,7 +311,7 @@ class Main extends Mod {
 		gate = null;
 		gateId = 0;
 		waypoint = null;
-		checkedWaypoint = null;
+
 		lastSearchRoom = null;
 		tileLayout = "";
 		geometryDirty = true;
@@ -317,6 +334,13 @@ class Main extends Mod {
 		if (floorId == 0)
 			return;
 		var npc = Std.downcast(object, NPCGameObject);
+		if (npc != null
+			&& npc.distributedDungeonFloor == liveFloor()
+			&& npc.gmNpc != null
+			&& Std.string(npc.gmNpc.Constant).toUpperCase().indexOf("EXIT") >= 0) {
+			geometryDirty = true;
+			nextGeometry = 0;
+		}
 		if (npc != null && npc.isProp && npc.gmNpc != null && npc.gmNpc.IsAttackable && npc.gmNpc.Species != "TRAP")
 			return;
 		if (npc != null
@@ -344,7 +368,7 @@ class Main extends Mod {
 		gate = null;
 		gateId = 0;
 		waypoint = null;
-		checkedWaypoint = null;
+
 		bossRoom = false;
 		nextGeometry = 0;
 		geometryDirty = true;
@@ -447,17 +471,14 @@ class Main extends Mod {
 			if (hero == null)
 				for (h in ctx.state.heroes)
 					trackHero(h);
-			var geometryStarted = haxe.Timer.stamp();
 			if (refreshGeometry(floor, now)) {
-				var elapsed = (haxe.Timer.stamp() - geometryStarted) * 1000;
-				grid.stats.geometryMs += elapsed;
-				grid.stats.maximumGeometryMs = Math.max(grid.stats.maximumGeometryMs, elapsed);
 				lastCell = -1;
 				nextSearch = 0;
 			}
 			nextGeometry = now + (goal == null || floor.box2DWorld == null ? 120 : 300);
 		}
-		if (goal == null || hero == null) {
+		if (!NavigationGoal.verified(goal, gate != null) || hero == null) {
+			panel.hideRoute();
 			panel.visible = false;
 			if (floating != null)
 				floating.visible = false;
@@ -467,6 +488,7 @@ class Main extends Mod {
 		var x = hero.x;
 		var y = hero.y;
 		if (bossRoom && gate == null && goal.contains(x, y)) {
+			panel.hideRoute();
 			panel.showBoss();
 			if (floating != null && displayFlags[0].value)
 				floating.showBoss();
@@ -482,7 +504,7 @@ class Main extends Mod {
 			// current heading until a forward waypoint is available.
 			grid.invalidateRoute();
 			waypoint = null;
-			checkedWaypoint = null;
+
 			lastCell = -1;
 			nextSearch = 0;
 		}
@@ -522,8 +544,6 @@ class Main extends Mod {
 				floating.showIdle();
 			return;
 		}
-		if (grid.stats.firstCompassDelayMs < 0 && grid.stats.initialSearchStarted >= 0)
-			grid.stats.firstCompassDelayMs = (haxe.Timer.stamp() - grid.stats.initialSearchStarted) * 1000;
 		panel.aim(grid.routeDirection.x, grid.routeDirection.y);
 		if (floating != null && displayFlags[0].value)
 			floating.aim(grid.routeDirection.x, grid.routeDirection.y);
@@ -533,17 +553,6 @@ class Main extends Mod {
 		var dx = target.x - fromX;
 		var dy = target.y - fromY;
 		return (dx != 0 || dy != 0) && (target.x - x) * dx + (target.y - y) * dy <= 0;
-	}
-
-	function canDisplayWaypoint(x:Float, y:Float):Bool {
-		if (waypoint == checkedWaypoint && x == checkedX && y == checkedY)
-			return true;
-		if (!grid.isGentleDirection(x, y, waypoint) && !grid.canAim(x, y, waypoint, waypoint == gate ? gateId : 0))
-			return false;
-		checkedWaypoint = waypoint;
-		checkedX = x;
-		checkedY = y;
-		return true;
 	}
 
 	function refreshGeometry(floor:DistributedDungeonFloor, now:Int):Bool {
@@ -580,12 +589,7 @@ class Main extends Mod {
 		gate = null;
 		gateId = 0;
 		bossRoom = false;
-		for (tile in tiles) {
-			if (tile.category == "EXIT_TILE")
-				goal = tile;
-			else if (goal == null && tile.category == "BOSS_TILE")
-				goal = tile;
-		}
+		goal = NavigationGoal.choose(tiles);
 		if (goal == null) {
 			grid.clear();
 			waypoint = null;
@@ -593,7 +597,7 @@ class Main extends Mod {
 		}
 
 		// These two authored exit rooms complete the floor through the boss life trigger.
-		bossRoom = goal.category == "BOSS_TILE" || goal.id == "454.1334956026168" || goal.id == "271.1333708475942";
+		bossRoom = NavigationGoal.boss(goal);
 		var gateScore = 0;
 		if (floor.remoteActors != null)
 			for (object in floor.remoteActors.toArray()) {
@@ -625,10 +629,13 @@ class Main extends Mod {
 		}
 		lastObstacleRefresh = now;
 		grid.refresh(floor, tiles);
-		grid.prepareField(goal, gate, gateId);
+		if (NavigationGoal.verified(goal, gate != null))
+			grid.prepareField(goal, gate, gateId);
+		else
+			grid.forgetGoal();
 		// Thin collision shapes can change the edges without changing any cell center.
 		waypoint = null;
-		checkedWaypoint = null;
+
 		var gateChanged = oldGateId != gateId || (oldGate == null ? gate != null : (gate == null || !oldGate.equals(gate)));
 		if (!gateChanged)
 			gate = oldGate;
@@ -645,15 +652,6 @@ class Main extends Mod {
 		if (toggleSetting != null)
 			toggleSetting.cancel();
 		toggleSetting = null;
-		if (modeSetting != null)
-			modeSetting.cancel();
-		modeSetting = null;
-		if (sizeSetting != null)
-			sizeSetting.cancel();
-		sizeSetting = null;
-		if (setting != null)
-			setting.cancel();
-		setting = null;
 		if (listening)
 			setEnabled(false);
 		if (tools != null) {

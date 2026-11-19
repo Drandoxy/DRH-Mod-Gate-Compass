@@ -1,4 +1,4 @@
-package mods.gate_compass;
+package;
 
 /** Small aggregate counters; no samples or file writes inside a micro-step. */
 class NavigationStats {

@@ -21,7 +21,7 @@ class HeadingFlowChecks {
   var floor=new distributedObjects.DistributedDungeonFloor();
   ctx.core.facade.gameObjectManager={getReferenceFromId:function(id:UInt):Dynamic{return id==7?floor:null;}};
   var main=new Main();main.ctx=ctx;main.floorId=7;main.hero=new Hero();main.hero.id=8;main.hero.x=5;main.hero.y=5;
-  var grid=new SamplingGrid();grid.room=new Tile("room",0,0);main.grid=grid;main.goal=grid.room;
+  var grid=new SamplingGrid();grid.room=new Tile("room",0,0);main.grid=grid;main.goal=grid.room;main.gate=new Point(50,50);
   main.panel=new Compass(ctx);main.displayFlags=[for(i in 0...6)new CompassOption<Bool>(i==2,null)];
   main.nextGeometry=2147483647;main.lastSearchRoom=grid.room;main.lastRegion="same";main.lastCell=0;
   main.waypoint=new Point(0,-192);main.lastSearchX=0;main.lastSearchY=5;
@@ -35,6 +35,8 @@ class HeadingFlowChecks {
   if(grid.calls!=2)throw "route work ran faster than ten updates per second";
   main.nextSearch=11000;main.hero.x=220;openfl.Lib.now=10210;main.updateNavigation(null);
   if(grid.calls!=3)throw "large jump waited for the normal clock";
+  main.gate=null;main.nextSearch=0;openfl.Lib.now=11000;main.updateNavigation(null);
+  if(grid.calls!=3 || main.panel.visible)throw "Unknown exit continued guidance";
   main.panel.destroy();trace("PASS: Main refreshes heading inside a cell and respects the existing cooldown");
  }
 }

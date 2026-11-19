@@ -11,10 +11,13 @@ class PanelChecks {
   controls.push(new CompassControl("Line length",new CompassOption<Float>(600,null),300,2200,2200,50));
   controls.push(new CompassControl("Line start distance",new CompassOption<Float>(300,null),0,500,135,5));
   var flags=[for(i in 0...5)new CompassOption<Bool>(false,null)];
-  var panel=new CompassTools(ctx,controls,flags);
-  if(panel.popupHeight!=624||panel.tracks.length!=7)throw "panel does not include sixth slider";
+  var panel=new CompassTools(ctx,controls);
+  if(panel.popupHeight!=474||panel.tracks.length!=7)throw "panel does not include sixth slider";
   if(panel.tracks[5].y+30>=panel.popupHeight-40)throw "slider overlaps bottom buttons";
+  var px=panel.popup.x; var py=panel.popup.y;
+  if(px<ctx.viewWidth/2)throw "panel must default to side";
   panel.resetDefaults(new openfl.events.MouseEvent());
+  if(panel.popup.x!=px||panel.popup.y!=py)throw "reset moved panel";
   if(controls[5].option.value!=2200||controls[4].option.value!=0||controls[6].option.value!=135)throw "reset lost control defaults";
   var reset:openfl.display.Sprite=cast panel.popup.getChildByName("reset");
   if(panel.popupHeight-reset.y-38!=24||reset.y-panel.tracks[6].y<30)throw "reset padding missing";
