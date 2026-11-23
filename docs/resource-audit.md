@@ -1,4 +1,4 @@
-# Resource audit — 2026-11-17
+# Resource audit - 2026-11-17
 
 Offline tests use the production routing and ribbon code with mock host/OpenFL/Starling objects. They do not measure the game process, GPU memory, FPS, or device power.
 
@@ -22,7 +22,7 @@ Offline tests use the production routing and ribbon code with mock host/OpenFL/S
 
 Mean reduction about 66.4%. This isolates ribbon-update CPU work, not whole-game CPU. Both versions used the same segment count; the subdivision reduction is additional.
 
-Twelve complete cache builds alternating 20/30 tiles, 36 anchors per tile, drawing creation, display switching, destruction and cache clearing: passed. Cached routes, fields, edge checks, scene mounts, texture lists and vertex buffers were empty after cleanup. Interpreter live heap after full collection: 10,381.89 KiB after match 1; 10,382.63 KiB after matches 2–12. No continuing retained growth in this simulation. This heap includes the interpreter and test harness.
+Twelve complete cache builds alternating 20/30 tiles, 36 anchors per tile, drawing creation, display switching, destruction and cache clearing: passed. Cached routes, fields, edge checks, scene mounts, texture lists and vertex buffers were empty after cleanup. Interpreter live heap after full collection: 10,381.89 KiB after match 1; 10,382.63 KiB after matches 2-12. No continuing retained growth in this simulation. This heap includes the interpreter and test harness.
 
 Fade checks: zero-alpha endpoints, gradual 25-unit fade, rounded silhouette, opaque middle and buffer cleanup passed. Independent 3D/Pathfinder resource release and restoration passed.
 
