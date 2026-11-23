@@ -1,12 +1,21 @@
 package mods.gate_compass;
 
 import starling.display.Mesh;
+import starling.display.MeshBatch;
 import starling.styles.MeshStyle;
 import starling.rendering.VertexData;
 import starling.rendering.IndexData;
 
+/**
+ * One route ribbon layer. The visible mesh is a non-batchable MeshBatch: it keeps its own GPU buffer,
+ * which is uploaded only when the visible part changes. A plain Mesh is copied and transformed into the
+ * shared batch every frame, and the route layer moves with the camera every frame, so Starling could
+ * never reuse its render cache for it.
+ */
 class RouteBatch {
-	public var mesh:Mesh;
+	public var mesh:MeshBatch;
+
+	var geometry:Mesh;
 
 	var indices:IndexData;
 	var source:VertexData;
@@ -37,7 +46,10 @@ class RouteBatch {
 				indices.addTriangle(v + j + 1, v + 5 + j, v + 4 + j);
 			}
 		}
-		mesh = new Mesh(active, indices, new MeshStyle());
+		geometry = new Mesh(active, indices, new MeshStyle());
+		mesh = new MeshBatch();
+		mesh.batchable = false;
+		mesh.addMesh(geometry);
 		mesh.alpha = opacity;
 		mesh.touchable = false;
 	}
@@ -134,13 +146,17 @@ class RouteBatch {
 					indices.addTriangle(v + j + 1, v + 5 + j, v + 4 + j);
 				}
 			}
-		mesh.setVertexDataChanged();
-		mesh.setIndexDataChanged();
+		geometry.setVertexDataChanged();
+		geometry.setIndexDataChanged();
+		// Refill the drawn buffer once per visible change (not per frame).
+		mesh.clear();
+		mesh.addMesh(geometry);
 	}
 
 	public function destroy():Void {
 		mesh.removeFromParent();
 		mesh.dispose();
+		geometry.dispose();
 		source.clear();
 		active.clear();
 		indices.clear();

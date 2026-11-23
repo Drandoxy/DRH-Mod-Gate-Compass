@@ -306,9 +306,14 @@ class WalkGrid {
 		liveField = null;
 	}
 
-	public function advanceField():Bool {
+	/**
+	 * One slice of background route building. `share` scales the slice: called every frame at a high
+	 * frame rate with a smaller share, the work per second stays the same while no single frame gets
+	 * the whole 1.5 ms (0.6 ms in Low power mode).
+	 */
+	public function advanceField(share:Float = 1):Bool {
 		var started = haxe.Timer.stamp();
-		var totalBudget = lowPower ? 0.6 : 1.5;
+		var totalBudget = (lowPower ? 0.6 : 1.5) * share;
 		var changed = advanceGeometry(cells.length == 0 ? totalBudget : totalBudget * .4);
 		var remaining = totalBudget - (haxe.Timer.stamp() - started) * 1000;
 		if (field == null || remaining <= .02)

@@ -102,19 +102,19 @@ class FloatingCompass extends Sprite {
 			arrowArt = BitmapData.fromFile(path);
 		} catch (_:Dynamic) {}
 		if (arrowArt != null) {
+			// The gold tint never changes: bake it into the image once. A live filter on this arrow would
+			// be redrawn by OpenFL whenever the needle rotates, which is almost every frame.
+			arrowArt.applyFilter(arrowArt, arrowArt.rect, new openfl.geom.Point(), new ColorMatrixFilter([
+				   1, 0, 0, 0, 18,
+				0.75, 0, 0, 0, 10,
+				0.28, 0, 0, 0,  0,
+				   0, 0, 0, 1,  0
+			]));
 			var arrow = new Bitmap(arrowArt, "auto", true);
 			arrow.width = 81;
 			arrow.height = 54 * arrowArt.height / arrowArt.width;
 			arrow.x = -arrow.width / 2;
 			arrow.y = -arrow.height / 2;
-			arrow.filters = [
-				new ColorMatrixFilter([
-					   1, 0, 0, 0, 18,
-					0.75, 0, 0, 0, 10,
-					0.28, 0, 0, 0,  0,
-					   0, 0, 0, 1,  0
-				])
-			];
 			needle.addChild(arrow);
 			return;
 		}

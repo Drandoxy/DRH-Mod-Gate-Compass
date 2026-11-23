@@ -54,6 +54,9 @@ class Main extends Mod {
 	var nextGeometry = 0;
 	var lastObstacleRefresh = 0;
 	var nextUpdate = 0;
+	// Average frame time, so background route work can be split evenly across frames.
+	var lastFrameAt = 0;
+	var frameMs = 16.7;
 	var lastCell = -1;
 	var lastSearchRoom:Tile;
 	var lastSearchX = 0.;
@@ -392,8 +395,23 @@ class Main extends Mod {
 	}
 
 	function update(event:Event):Void {
+		var now = Lib.getTimer();
+		if (lastFrameAt > 0) {
+			var step = now - lastFrameAt;
+			if (step > 0 && step < 100)
+				frameMs += (step - frameMs) * 0.1;
+		}
+		lastFrameAt = now;
 		updateNavigation(event);
 	}
+
+	/**
+	 * Share of the per-update route budget for one frame. At 160 FPS a frame is about 6 ms, so each frame
+	 * gets about 40% of the budget and runs every frame instead of every 16 ms: the same work per second,
+	 * without a 1.5 ms chunk landing in a single short frame.
+	 */
+	public static function frameShare(frameMs:Float, intervalMs:Float):Float
+		return Math.min(1., Math.max(0.15, frameMs / intervalMs));
 
 	function updateNavigation(event:Event):Void {
 		if (panel == null || grid == null)
@@ -443,16 +461,17 @@ class Main extends Mod {
 		panel.turn(now);
 		if (floating != null)
 			floating.turn(now);
-		if (now < nextUpdate)
-			return;
-		nextUpdate = now + (displayFlags[5].value ? 33 : 16);
+		var interval = displayFlags[5].value ? 33 : 16;
 		if (hasDisplay && hero != null) {
 			grid.prioritize(hero.x, hero.y);
-			if (grid.advanceField()) {
+			if (grid.advanceField(frameShare(frameMs, interval))) {
 				nextSearch = 0;
 				lastCell = -1;
 			}
 		}
+		if (now < nextUpdate)
+			return;
+		nextUpdate = now + interval;
 
 		if (hero != null) {
 			var object = Std.downcast(facade.gameObjectManager.getReferenceFromId(hero.id), HeroGameObject);
@@ -495,7 +514,8 @@ class Main extends Mod {
 			return;
 		}
 		var movedSinceSearch = Math.abs(x - lastSearchX) + Math.abs(y - lastSearchY) >= 1;
-		var nearWaypoint = movedSinceSearch && waypoint != null && waypoint != gate && Point.distance(new Point(x, y), waypoint) <= 18;
+		var nearWaypoint = movedSinceSearch && waypoint != null && waypoint != gate
+			&& (waypoint.x - x) * (waypoint.x - x) + (waypoint.y - y) * (waypoint.y - y) <= 18 * 18;
 		if (movedSinceSearch
 			&& waypoint != null
 			&& waypoint != gate

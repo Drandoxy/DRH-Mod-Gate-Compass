@@ -52,3 +52,10 @@ The live guide reuses a destination field. Normal steering updates at about 10 H
 ## Changes since 0.3.6
 
 - The route edge cache stores 1/0 instead of true/false, so cached route checks read back the same in every game build.
+
+## Changes since 0.3.7
+
+- The route line is drawn from its own GPU buffer, uploaded only when the visible part changes, instead of being copied into the shared batch every frame while the camera moves.
+- Background route building is spread evenly across frames: at high frame rates each frame does a smaller slice, with the same work per second.
+- The 2D compass arrow's gold tint is applied to the image once instead of as a live filter redrawn while the needle turns.
+

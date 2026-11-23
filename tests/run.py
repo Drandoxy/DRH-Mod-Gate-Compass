@@ -20,4 +20,5 @@ with tempfile.TemporaryDirectory(prefix="compass-checks-") as directory:
     print("PASS: full mod entry and rendering/UI source type-check against host adapters", flush=True)
 
     subprocess.run([args.haxe, "-cp", str(runtime), "-main", "HeadingFlowChecks", "--interp"], check=True)
+    subprocess.run([args.haxe, "-cp", str(runtime), "-main", "PerformanceChecks", "--interp"], check=True)
     subprocess.run([args.haxe, "-cp", str(runtime), "-main", "RouteHeadChecks", "--interp"], check=True)

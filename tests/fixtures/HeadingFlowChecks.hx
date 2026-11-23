@@ -8,7 +8,7 @@ class SamplingGrid extends WalkGrid {
  override public function cellAt(x:Float,y:Float):Int{return 0;}
  override public function roomAtCell(c:Int):Tile{return room;}
  override public function regionAt(x:Float,y:Float):String{return "same";}
- override public function advanceField():Bool{return false;}
+ override public function advanceField(share:Float=1):Bool{return false;}
  override public function waypoint(x:Float,y:Float,g:Tile,p:Point,id:UInt=0):Point{calls++;routeDirection=new Point(0,-100);return new Point(x,y-192);}
 }
 @:access(mods.gate_compass.Main)

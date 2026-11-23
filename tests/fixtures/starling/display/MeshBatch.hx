@@ -1,0 +1,1 @@
+package starling.display;class MeshBatch extends Mesh{public var batchable=true;public var fills=0;public var cleared=0;public function new(){super(null,null,null);}public function clear():Void{cleared++;}public function addMesh(m:Mesh,?matrix:Dynamic,alpha:Float=1):Void{fills++;}}
