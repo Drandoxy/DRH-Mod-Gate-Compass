@@ -53,7 +53,8 @@ class WalkGrid {
 	var tilesByPosition:Map<String, Tile> = new Map();
 	var nearCollider:Array<Bool> = [];
 	var floor:DistributedDungeonFloor;
-	var edgeChecks:Map<Int, Bool> = new Map();
+	// 1 = open, 0 = closed. Not Map<Int, Bool>: a Bool stored in a Map from a mod reads back as an Int.
+	var edgeChecks:Map<Int, Int> = new Map();
 	var gentleTarget:Point;
 	var gentleOrigin:Point;
 	var left:Float;
@@ -252,14 +253,14 @@ class WalkGrid {
 		var key = lower * 2 + (Math.abs(from - to) == 1 ? 0 : 1);
 		var cached = edgeChecks.get(key);
 		if (cached != null)
-			return cached;
+			return cached == 1;
 		if (cachedQueries)
 			return false;
 		// Authored exit flags are incomplete on some floors. Confirm the seam in the live world.
 		var start = point(from);
 		var end = point(to);
 		var open = canAim(start.x, start.y, end);
-		edgeChecks.set(key, open);
+		edgeChecks.set(key, open ? 1 : 0);
 		return open;
 	}
 

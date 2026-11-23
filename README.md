@@ -48,3 +48,7 @@ Use **DRH Launcher** to install Gate Compass when available in its mod catalogue
 Requires **Dungeon Rampage Haxe 18** and **Mod API 1.4 or later**, including API 1.5. Release history is available on the [Releases page](https://github.com/Drandoxy/DRH-Mod-Gate-Compass/releases).
 
 The live guide reuses a destination field. Normal steering updates at about 10 Hz, with earlier updates at corners, room changes and large jumps. Line animation stays independent of the navigation clock.
+
+## Changes since 0.3.6
+
+- The route edge cache stores 1/0 instead of true/false, so cached route checks read back the same in every game build.
