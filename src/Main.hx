@@ -64,7 +64,7 @@ class Main extends Mod {
 
 	override public function init(context:Context):Void {
 		ctx = context;
-		preferences = new CompassPreferences(context.data);
+		preferences = new CompassPreferences(context.data, function(message) context.log(message));
 		var lowPower = preferences.flag("lowPower", false);
 		var legacyEffects = preferences.flag("reducedEffects", false);
 		if (legacyEffects.value) {
@@ -104,7 +104,7 @@ class Main extends Mod {
 		}
 		preferences.flag("nativeSwitchesV1", false).value = true;
 		preferences.flush();
-		appearanceSubscriptions.push(context.settings.button("openCompassSettings", "Adjust appearance", "Adjust appearance").onPress(openTools));
+		appearanceSubscriptions.push(context.settings.button("openCompassSettings", "Adjust appearance", "Open").onPress(openTools));
 		appearanceSubscriptions.push(context.keys.action("openCompassPanel", "Adjust compass appearance", "Open the live appearance sliders.", Keyboard.G,
 			true, true)
 			.onPress(openTools));
@@ -144,14 +144,21 @@ class Main extends Mod {
 				setEnabled(enabled);
 				try {
 					sys.io.File.saveContent(ctx.data + "/compass-enabled.json", haxe.Json.stringify({enabled: enabled}));
-				} catch (_:Dynamic) {}
+				} catch (error:Dynamic) {
+					ctx.log("Could not save the on/off state: " + Std.string(error));
+				}
 			});
 		var enabled = true;
+		var enabledFile = ctx.data + "/compass-enabled.json";
 		try {
-			var saved:Dynamic = haxe.Json.parse(sys.io.File.getContent(ctx.data + "/compass-enabled.json"));
-			if (saved.enabled == false)
-				enabled = false;
-		} catch (_:Dynamic) {}
+			if (sys.FileSystem.exists(enabledFile)) {
+				var saved:Dynamic = haxe.Json.parse(sys.io.File.getContent(enabledFile));
+				if (saved.enabled == false)
+					enabled = false;
+			}
+		} catch (error:Dynamic) {
+			ctx.log("Could not read the on/off state: " + Std.string(error));
+		}
 		setEnabled(enabled);
 	}
 

@@ -10,7 +10,9 @@ class CompassPalette {
 			var data:Dynamic = haxe.Json.parse(sys.io.File.getContent(ctx.resources + "/tile_themes.json"));
 			for (id in Reflect.fields(data))
 				catalogue.set(id, Std.string(Reflect.field(data, id)));
-		} catch (_:Dynamic) {}
+		} catch (error:Dynamic) {
+			ctx.log("Could not read tile_themes.json: " + Std.string(error));
+		}
 	}
 
 	public function detect(ctx:Context):Int {

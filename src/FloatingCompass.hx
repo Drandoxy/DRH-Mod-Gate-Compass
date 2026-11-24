@@ -100,7 +100,9 @@ class FloatingCompass extends Sprite {
 			var folder = haxe.io.Path.directory(Sys.programPath());
 			var path = folder + "/Resources/Glyphs/Others/Arrows/Directional_Arrow_Straight.png";
 			arrowArt = BitmapData.fromFile(path);
-		} catch (_:Dynamic) {}
+		} catch (error:Dynamic) {
+			ctx.log("Could not load the arrow image, using the drawn arrow: " + Std.string(error));
+		}
 		if (arrowArt != null) {
 			// The gold tint never changes: bake it into the image once. A live filter on this arrow would
 			// be redrawn by OpenFL whenever the needle rotates, which is almost every frame.

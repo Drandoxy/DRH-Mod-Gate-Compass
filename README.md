@@ -13,7 +13,7 @@ Enable each independently. Both compasses aim toward a far visible point along t
 
 ## Settings
 
-Use the five switches in **MODS** for 2D, 3D, Pathfinder, smoothing and low power. For the seven appearance sliders, open **MODS > Gate Compass > Adjust appearance**, or press **Ctrl + Shift + G**.
+Use the five switches in **MODS** for 2D, 3D, Pathfinder, smoothing and low power. For the seven appearance sliders, press **Open** on the **Adjust appearance** row in **MODS > Gate Compass**, or press **Ctrl + Shift + G**.
 
 - Adjust circle/arrow sizes, stroke widths and arrow distance.
 - **Line length**: 300-2,200 world units; default 2,200.
@@ -58,4 +58,9 @@ The live guide reuses a destination field. Normal steering updates at about 10 H
 - The route line is drawn from its own GPU buffer, uploaded only when the visible part changes, instead of being copied into the shared batch every frame while the camera moves.
 - Background route building is spread evenly across frames: at high frame rates each frame does a smaller slice, with the same work per second.
 - The 2D compass arrow's gold tint is applied to the image once instead of as a live filter redrawn while the needle turns.
+
+## Changes since 0.3.8
+
+- The appearance button in MODS is labeled **Open**, so the label is no longer cut off; the row title still says what it opens.
+- Errors while reading or saving the compass's own files, or loading the arrow image, are now written to the game log instead of being ignored. A missing file on first use is still normal and not reported.
 

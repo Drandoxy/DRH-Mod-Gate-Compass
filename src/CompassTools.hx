@@ -291,8 +291,11 @@ class CompassTools extends Sprite {
 	}
 
 	function load():Void {
+		var layoutFile = ctx.data + "/compass-tools.json";
+		if (!sys.FileSystem.exists(layoutFile))
+			return;
 		try {
-			var p:Dynamic = haxe.Json.parse(sys.io.File.getContent(ctx.data + "/compass-tools.json"));
+			var p:Dynamic = haxe.Json.parse(sys.io.File.getContent(layoutFile));
 			if (p.layoutVersion == 5) {
 				popup.x = p.x;
 				popup.y = p.y;
@@ -303,7 +306,9 @@ class CompassTools extends Sprite {
 			if (p.popupScale != null)
 				popup.scaleX = popup.scaleY = Math.max(.65, Math.min(2, p.popupScale));
 			clampPopup();
-		} catch (_:Dynamic) {}
+		} catch (error:Dynamic) {
+			ctx.log("Could not read the appearance panel position: " + Std.string(error));
+		}
 	}
 
 	function save():Void {
@@ -318,7 +323,9 @@ class CompassTools extends Sprite {
 				y: popup.y,
 				popupScale: popup.scaleX
 			}));
-		} catch (_:Dynamic) {}
+		} catch (error:Dynamic) {
+			ctx.log("Could not save the appearance panel position: " + Std.string(error));
+		}
 	}
 
 	public function destroy():Void {
