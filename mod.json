@@ -2,12 +2,12 @@
   "id": "gate_compass",
   "name": "Gate Compass",
   "description": "Directions to the dungeon gate with 2D and ground compasses and an optional glowing Pathfinder.",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "author": "Drandox",
   "api": "1.4.0",
   "entry": "Main",
   "uses": [
     "extends"
   ],
-  "drh": "18"
+  "drh": "18-19"
 }

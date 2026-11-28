@@ -350,7 +350,8 @@ class WalkGrid {
 			f.initialFocus = focusCell;
 		var deadline = haxe.Timer.stamp() + budgetMs / 1000;
 		var work = 0;
-		while (work++ < 1536 && haxe.Timer.stamp() < deadline) {
+		// The clock is read every 16 steps: a step is often cheaper than reading it.
+		while (work++ < 1536 && ((work & 15) != 0 || haxe.Timer.stamp() < deadline)) {
 			if (f.phase == -1) {
 				if (f.initialized < f.count) {
 					f.scores.push(Math.POSITIVE_INFINITY);
@@ -435,28 +436,29 @@ class WalkGrid {
 			f.settled[current] = true;
 			var col = current % width;
 			var row = Std.int(current / width);
-			for (next in [
-				index(col - 1, row),
-				index(col + 1, row),
-				index(col, row - 1),
-				index(col, row + 1)
-			]) {
-				if (!walkable(next) || f.settled[next] || !canCross(current, next))
-					continue;
-				var score = f.scores[current] + 1 + (hazards[current] ? 24 : 0) + 3. / (clearance[current] + 1);
-				if (score >= f.scores[next])
-					continue;
-				f.scores[next] = score;
-				f.next[next] = current;
-				// Reverse Dijkstra uses immutable costs, with no per-hero search.
-				fieldPush(f.heap, new RouteNode(next, score + fieldHeuristic(next)));
-			}
+			// The four neighbours one by one: no list made for every settled cell.
+			var score = f.scores[current] + 1 + (hazards[current] ? 24 : 0) + 3. / (clearance[current] + 1);
+			relax(f, current, index(col - 1, row), score);
+			relax(f, current, index(col + 1, row), score);
+			relax(f, current, index(col, row - 1), score);
+			relax(f, current, index(col, row + 1), score);
 			if (!focusAnnounced && current == focusCell) {
 				focusAnnounced = true;
 				return true;
 			}
 		}
 		return false;
+	}
+
+	function relax(f:RouteField, current:Int, next:Int, score:Float):Void {
+		if (!walkable(next) || f.settled[next] || !canCross(current, next))
+			return;
+		if (score >= f.scores[next])
+			return;
+		f.scores[next] = score;
+		f.next[next] = current;
+		// Reverse Dijkstra uses immutable costs, with no per-hero search.
+		fieldPush(f.heap, new RouteNode(next, score + fieldHeuristic(next)));
 	}
 
 	public function waypoint(x:Float, y:Float, goal:Tile, gate:Point, gateId:UInt = 0):Point {

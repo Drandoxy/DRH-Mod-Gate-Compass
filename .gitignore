@@ -8,3 +8,17 @@ __pycache__/
 /gate_logging.enabled
 /gate-logs/
 *.jsonl
+/simulation/results.json
+/simulation/results.js
+/simulation/baseline.json
+/simulation/baseline.js
+/simulation/viewer-check.js
+
+/simulation/bench-*.json
+/simulation/bench-*.js
+/simulation/performance.json
+/simulation/performance.js
+/simulation/performance.md
+
+/simulation/cycle-*.json
+/simulation/cycle-*.js
